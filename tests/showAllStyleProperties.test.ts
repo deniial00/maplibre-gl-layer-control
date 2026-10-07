@@ -14,6 +14,8 @@ type Internals = {
     layerId: string,
     nativeIds: string[],
   ): HTMLDivElement | null;
+  openStyleEditor(layerId: string): void;
+  closeStyleEditor(layerId: string): void;
   resetLayerStyle(layerId: string): void;
   refreshStyleEditor(layerId?: string): void;
 };
@@ -500,5 +502,64 @@ describe("showAllStyleProperties: Reset Style", () => {
     expect(slider(editor, "fill-opacity")?.value).toBe("1");
     expect(picker(editor, "fill-outline-color")?.value).toBe("#00ff00");
     expect(onLayerStyleChange).toHaveBeenCalledWith("f", "fill-opacity", undefined);
+  });
+});
+
+describe("showAllStyleProperties: production open/close and mixed groups", () => {
+  it("openStyleEditor / closeStyleEditor leave the map style untouched", () => {
+    const { internals, writes } = setup(
+      { f: "fill" },
+      { paint: { f: { "fill-color": "#ff0000" } } },
+      { showAllStyleProperties: true },
+    );
+    const panel = document.createElement("div");
+    const item = document.createElement("div");
+    item.dataset.layerId = "f";
+    panel.appendChild(item);
+    internals.panel = panel;
+
+    internals.openStyleEditor("f");
+    expect(item.querySelector(".layer-control-style-editor")).not.toBeNull();
+    expect(slider(item, "fill-opacity")).not.toBeNull();
+    internals.refreshStyleEditor("f");
+    internals.closeStyleEditor("f");
+
+    expect(item.querySelector(".layer-control-style-editor")).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps outline color enabled when only some grouped layers block it", () => {
+    const { internals, paint } = setup(
+      { n1: "fill", n2: "fill" },
+      { paint: { n1: { "fill-antialias": false } } },
+      { showAllStyleProperties: true },
+    );
+    const editor = internals.createNativeSubLayerStyleEditor("custom", ["n1", "n2"])!;
+    document.body.appendChild(editor);
+    internals.state.activeStyleEditor = "custom";
+
+    const outline = picker(editor, "fill-outline-color")!;
+    expect(outline.disabled).toBe(false);
+    input(outline, "#123456");
+    expect(paint.get("n1")!["fill-outline-color"]).toBe("#123456");
+    expect(paint.get("n2")!["fill-outline-color"]).toBe("#123456");
+  });
+
+  it("disables a grouped control when any sublayer holds an expression", () => {
+    const expression = ["get", "o"];
+    const { internals, paint } = setup(
+      { n1: "fill", n2: "fill" },
+      { paint: { n1: { "fill-opacity": 0.5 }, n2: { "fill-opacity": expression } } },
+      { showAllStyleProperties: true },
+    );
+    const editor = internals.createNativeSubLayerStyleEditor("custom", ["n1", "n2"])!;
+    document.body.appendChild(editor);
+
+    expect(slider(editor, "fill-opacity")?.disabled).toBe(true);
+    expect(
+      groupOf(slider(editor, "fill-opacity"))?.querySelector(".style-control-reason")
+        ?.textContent,
+    ).toContain("expression");
+    expect(paint.get("n2")!["fill-opacity"]).toBe(expression);
   });
 });

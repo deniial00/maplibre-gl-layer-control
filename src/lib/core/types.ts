@@ -178,7 +178,9 @@ export interface LayerControlOptions {
    * Unset properties start at their effective value: the style-spec default,
    * or the inherited value (`fill-outline-color` follows `fill-color`).
    * Opening or closing the editor never writes to the map style; a property is
-   * set only when the user edits its control, and Reset Style unsets it again.
+   * set only when the user edits its control, and Reset Style unsets it again
+   * (raster layers excepted: their Reset restores the spec defaults as
+   * explicit values, as it does without this option).
    * A control that cannot take effect (e.g. outline color with
    * `fill-antialias: false` or a fill pattern, text properties without a
    * `text-field`, icon opacity without an `icon-image`) or whose value is a
