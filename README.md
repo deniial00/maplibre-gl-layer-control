@@ -18,10 +18,10 @@ A comprehensive layer control for MapLibre GL with advanced styling capabilities
 - ✅ **Layer symbols** - Visual type indicators (colored shapes) next to layer names, auto-detected from layer paint properties
 - ✅ **Resizable panel** - **Drag either edge of the panel to resize it**; double-click an edge to reset to the default width. The panel also grows to fill the available height so long layer lists only scroll once they exceed the map.
 - ✅ **Advanced style editor** - Per-layer-type styling controls:
-  - **Fill layers**: color, opacity, outline-color
+  - **Fill layers**: color, opacity, outline-color, [pattern picker](#fill-pattern-editor) (sprite/`addImage()` images, SDF-tinted by color)
   - **Line layers**: color, width, opacity, blur
-  - **Circle layers**: color, radius, opacity, blur, stroke properties
-  - **Symbol layers**: text-color, text-halo-color, halo-width, text/icon-opacity
+  - **Circle layers**: color, radius, opacity, stroke color, stroke width
+  - **Symbol layers**: text-color, text-opacity, icon-opacity
   - **Raster layers**: opacity, brightness, saturation, contrast, hue-rotate
   - **Exact numeric entry**: Click a displayed numeric value (or focus it and press Enter/Space) to enter an exact value without removing the slider. Enter or leaving the input applies; Escape cancels. Values are clamped to the control's range and rounded to its displayed decimal precision, rather than snapped to the slider's coarse increment.
 - ✅ **Dynamic layer detection** - Automatically detect and manage new layers
@@ -229,7 +229,7 @@ function MapComponent() {
 | `collapsed` | `boolean` | `true` | Start with panel collapsed |
 | `layers` | `string[]` | `undefined` | Layer IDs to control (auto-detects all if omitted) |
 | `layerStates` | `Record<string, LayerState>` | `undefined` | Manual layer state configuration |
-| `panelWidth` | `number` | `320` | Initial panel width in pixels |
+| `panelWidth` | `number` | `350` | Initial panel width in pixels |
 | `panelMinWidth` | `number` | `240` | Minimum panel width |
 | `panelMaxWidth` | `number` | `960` | Maximum panel width |
 | `panelMaxHeight` | `number` | `undefined` | Maximum panel height in pixels. Omit to fill the available vertical space (scrollable only when the layer list is taller than the map) |
@@ -241,6 +241,11 @@ function MapComponent() {
 | `excludeLayers` | `string[]` | `undefined` | Array of wildcard patterns to exclude layers by name (e.g., `['*-temp-*', 'debug-*']`) |
 | `customLayerAdapters` | `CustomLayerAdapter[]` | `undefined` | Adapters for non-MapLibre layers (deck.gl, Zarr, etc.) |
 | `basemapStyleUrl` | `string` | `undefined` | URL of basemap style JSON for reliable layer detection (see below) |
+| `enableContextMenu` | `boolean` | `true` | Enable the right-click context menu on layers (Rename, Zoom to Layer, Move Up/Down/to Top/to Bottom, Remove Layer) |
+| `enableDragAndDrop` | `boolean` | `true` | Enable drag-and-drop reordering of layers in the panel |
+| `onLayerRename` | `(layerId: string, oldName: string, newName: string) => void` | `undefined` | Called when a layer is renamed through the context menu |
+| `onLayerReorder` | `(layerOrder: string[]) => void` | `undefined` | Called when layers are reordered, via drag-and-drop or the context-menu move actions; receives the new layer ID order |
+| `onLayerRemove` | `(layerId: string) => void` | `undefined` | Called when a layer is removed from the map through the context menu or the style editor's **Remove Layer** button |
 | `enableBackgroundPresets` | `boolean` | `true` | Show the "Saved configurations" controls in the Background Layers panel |
 | `backgroundPresetStorageKey` | `string` | `'maplibre-layer-control:background-presets'` | `localStorage` key under which background visibility presets are stored |
 | `onBackgroundPresetsChange` | `(presets: BackgroundPresets) => void` | `undefined` | Called whenever the saved preset set changes (created or deleted); applying a preset does not change the set, so it does not fire |
