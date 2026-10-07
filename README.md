@@ -60,6 +60,10 @@ and an `SDF` badge when applicable. The current value is shown above the list.
 immediately and calls
 `onLayerStyleChange(layerId, 'fill-pattern', idOrUndefined)`.
 
+For grouped editors, differing pattern values appear as **Multiple patterns**;
+choosing an option updates every layer in the group. Fill Color is disabled if
+any grouped layer uses a loaded non-SDF image.
+
 SDF images are recoloured through that layer's Fill Color; sprite pixels are
 never modified, so layers sharing an image can use separate colours. MapLibre
 GL JS 6.8.0 or later is required to render the tinted SDF pattern on the map.

@@ -11,6 +11,7 @@ type TestableLayerControl = {
     originalStyles: Map<string, { paint: Record<string, unknown> }>;
   };
   styleEditors: Map<string, HTMLElement>;
+  nativeLayerGroups: Map<string, string[]>;
   createSliderControl(
     container: HTMLElement,
     layerId: string,
@@ -392,6 +393,60 @@ describe("fill pattern picker", () => {
     ).toContain("No images loaded");
     expect(paintProps.get(key("layer-1", "fill-pattern"))).toBe("ghost");
     expect(onLayerStyleChange).not.toHaveBeenCalled();
+  });
+
+
+  it("shows mixed patterns and updates every native fill layer", () => {
+    const { internals, paintProps, key } = makeControl(
+      {},
+      { dots: { sdf: true }, stripes: { sdf: false } },
+    );
+    internals.nativeLayerGroups.set("layer-1", ["layer-1", "layer-2"]);
+    paintProps.set(key("layer-1", "fill-pattern"), "dots");
+    paintProps.set(key("layer-2", "fill-pattern"), "stripes");
+    paintProps.set(key("layer-1", "fill-color"), "#ff0000");
+
+    const container = document.createElement("div");
+    internals.addFillControls(container, "layer-1");
+
+    expect(
+      container.querySelector(".style-control-pattern-current")?.textContent,
+    ).toBe("Current: Multiple patterns");
+    expect(
+      container.querySelector(
+        '.style-control-pattern-option[aria-selected="true"]',
+      ),
+    ).toBeNull();
+    expect(
+      container
+        .querySelector(".style-control-pattern-hint")
+        ?.textContent,
+    ).toContain("at least one uses a non-SDF pattern");
+
+    const fillColor = container.querySelector<HTMLInputElement>(
+      '.style-control-color-picker[data-property="fill-color"]',
+    );
+    expect(fillColor?.disabled).toBe(true);
+
+    container
+      .querySelector<HTMLButtonElement>(
+        '.style-control-pattern-option[data-pattern-id="dots"]',
+      )
+      ?.click();
+
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBe("dots");
+    expect(paintProps.get(key("layer-2", "fill-pattern"))).toBe("dots");
+    expect(
+      container.querySelector(".style-control-pattern-current")?.textContent,
+    ).toBe("Current: dots");
+    expect(
+      container
+        .querySelector<HTMLButtonElement>(
+          '.style-control-pattern-option[data-pattern-id="dots"]',
+        )
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(fillColor?.disabled).toBe(false);
   });
 
   it("reset removes a pattern added to a layer that had none", () => {

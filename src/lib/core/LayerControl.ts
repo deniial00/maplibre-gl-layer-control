@@ -3524,11 +3524,25 @@ export class LayerControl implements IControl {
   private renderFillPatternPicker(group: HTMLElement, layerId: string): void {
     group.replaceChildren();
 
-    const current = this.map.getPaintProperty(layerId, "fill-pattern") as unknown;
+    const targetIds = this.nativeLayerGroups.get(layerId) || [layerId];
+    const currentValues = targetIds.map((id) =>
+      this.map.getPaintProperty(id, "fill-pattern"),
+    );
+    const firstValue = currentValues[0];
+    const firstValueIsUnset =
+      firstValue === undefined || firstValue === null || firstValue === "";
+    const mixed = currentValues.some((value) => {
+      const valueIsUnset =
+        value === undefined || value === null || value === "";
+      if (valueIsUnset !== firstValueIsUnset) return true;
+      return !valueIsUnset && JSON.stringify(value) !== JSON.stringify(firstValue);
+    });
+    const current = mixed ? undefined : firstValue;
     const images = listPatternImages(this.map);
     const color = getLayerColor(this.map, layerId, "fill");
-    const kind =
-      current === undefined || current === null || current === ""
+    const kind = mixed
+      ? "mixed"
+      : current === undefined || current === null || current === ""
         ? "none"
         : typeof current === "string"
           ? "constant"
@@ -3538,10 +3552,11 @@ export class LayerControl implements IControl {
         ? images.find((entry) => entry.id === current)
         : undefined;
     const missing = kind === "constant" && !selectedImage;
-    const nonSdfPatternSelected =
-      kind === "constant" &&
-      selectedImage !== undefined &&
-      !selectedImage.image.sdf;
+    const nonSdfPatternSelected = currentValues.some(
+      (value) =>
+        typeof value === "string" &&
+        images.some((entry) => entry.id === value && !entry.image.sdf),
+    );
     const fillColorPicker = group.parentElement?.querySelector<HTMLInputElement>(
       '.style-control-color-picker[data-property="fill-color"]',
     );
@@ -3561,7 +3576,9 @@ export class LayerControl implements IControl {
 
     const currentLabel = document.createElement("div");
     currentLabel.className = "style-control-pattern-current";
-    if (kind === "none") {
+    if (mixed) {
+      currentLabel.textContent = "Current: Multiple patterns";
+    } else if (kind === "none") {
       currentLabel.textContent = "Current: None (solid fill)";
     } else if (kind === "constant" && missing) {
       currentLabel.textContent = `Current: ${current} (image not loaded)`;
@@ -3594,8 +3611,9 @@ export class LayerControl implements IControl {
       option.setAttribute(
         "aria-selected",
         String(
-          (patternId === null && kind === "none") ||
-            (kind === "constant" && patternId === current),
+          !mixed &&
+            ((patternId === null && kind === "none") ||
+              (kind === "constant" && patternId === current)),
         ),
       );
 
@@ -3624,7 +3642,6 @@ export class LayerControl implements IControl {
           if (option.getAttribute("aria-selected") === "true") return;
 
           const value = patternId ?? undefined;
-          const targetIds = this.nativeLayerGroups.get(layerId) || [layerId];
           for (const id of targetIds) {
             this.map.setPaintProperty(id, "fill-pattern", value);
           }
@@ -3656,7 +3673,11 @@ export class LayerControl implements IControl {
 
     const hint = document.createElement("div");
     hint.className = "style-control-pattern-hint";
-    if (kind === "none" || kind === "expression") {
+    if (mixed) {
+      hint.textContent = nonSdfPatternSelected
+        ? "Grouped layers use different patterns. Fill Color is disabled because at least one uses a non-SDF pattern. Selecting an option applies it to all."
+        : "Grouped layers use different patterns. Selecting an option applies it to all.";
+    } else if (kind === "none" || kind === "expression") {
       hint.hidden = true;
     } else if (missing) {
       hint.textContent =
