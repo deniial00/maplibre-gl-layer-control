@@ -518,11 +518,34 @@
 
 .style-control-value {
   min-width: 48px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: text;
   text-align: right;
   font-family: "SF Mono", "Monaco", "Consolas", monospace;
   font-size: 11px;
   color: #3a4756;
   font-weight: 500;
+}
+
+.style-control-value:hover,
+.style-control-value:focus-visible {
+  border-color: #2f6fed;
+  outline: none;
+}
+
+.style-control-number-input {
+  box-sizing: border-box;
+  width: 64px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid #2f6fed;
+  border-radius: 4px;
+  font-family: "SF Mono", "Monaco", "Consolas", monospace;
+  font-size: 11px;
+  text-align: right;
 }
 
 .style-control-color-group {

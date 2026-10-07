@@ -21,6 +21,7 @@ A comprehensive layer control for MapLibre GL with advanced styling capabilities
   - **Circle layers**: color, radius, opacity, blur, stroke properties
   - **Symbol layers**: text-color, text-halo-color, halo-width, text/icon-opacity
   - **Raster layers**: opacity, brightness, saturation, contrast, hue-rotate
+  - **Exact numeric entry**: Click a displayed numeric value (or focus it and press Enter/Space) to enter an exact value without removing the slider. Enter or leaving the input applies; Escape cancels. Values are clamped to the control's range and rounded to its displayed decimal precision, rather than snapped to the slider's coarse increment.
 - ✅ **Dynamic layer detection** - Automatically detect and manage new layers
 - ✅ **Background layer grouping** - Control all basemap layers as one group
 - ✅ **Background layer legend** - Gear icon to toggle individual background layer visibility

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { LayerControl } from "../src/lib/core/LayerControl";
 
 /**
@@ -8,6 +9,12 @@ type TestableLayerControl = {
   map: unknown;
   state: { activeStyleEditor: string | null };
   styleEditors: Map<string, HTMLElement>;
+  nativeLayerGroups: Map<string, string[]>;
+  addStyleControlsForLayerType(
+    container: HTMLElement,
+    layerId: string,
+    layerType: string,
+  ): void;
   createSliderControl(
     container: HTMLElement,
     layerId: string,
@@ -121,8 +128,8 @@ describe("onLayerStyleChange callback", () => {
     );
   });
 
-  it("does not throw or notify when no callback is provided", () => {
-    const { internals } = makeControl();
+  it("updates paint when no callback is provided", () => {
+    const { internals, paintProps, key } = makeControl();
 
     internals.state.activeStyleEditor = "layer-1";
     const container = document.createElement("div");
@@ -141,9 +148,9 @@ describe("onLayerStyleChange callback", () => {
       ".style-control-slider",
     ) as HTMLInputElement;
     slider.value = "0.5";
-    expect(() =>
-      slider.dispatchEvent(new Event("input", { bubbles: true })),
-    ).not.toThrow();
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(paintProps.get(key("layer-1", "raster-opacity"))).toBe(0.5);
+    expect(container.querySelector(".style-control-value")?.textContent).toBe("0.50");
   });
 });
 
@@ -208,10 +215,6 @@ describe("refreshStyleEditor", () => {
     expect(display.value).toBe("#663399");
   });
 
-  it("is a no-op when the editor is not open", () => {
-    const { control } = makeControl();
-    expect(() => control.refreshStyleEditor("missing")).not.toThrow();
-  });
 });
 
 describe("color control initialization", () => {
@@ -232,5 +235,124 @@ describe("color control initialization", () => {
     expect(
       invalidContainer.querySelector(".style-control-color-picker"),
     ).toBeNull();
+  });
+});
+
+describe("exact numeric entry", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  function setup(layerType = "line", property = "line-width", initial = 2) {
+    const onLayerStyleChange = vi.fn();
+    const fixture = makeControl({ onLayerStyleChange });
+    fixture.paintProps.set(fixture.key("native-primary", property), initial);
+    fixture.internals.state.activeStyleEditor = "outer-layer";
+    const editor = document.createElement("div");
+    document.body.appendChild(editor);
+    fixture.internals.styleEditors.set("outer-layer", editor);
+    fixture.internals.addStyleControlsForLayerType(editor, "native-primary", layerType);
+    const slider = editor.querySelector(
+      `.style-control-slider[data-property="${property}"]`,
+    ) as HTMLInputElement;
+    const wrapper = slider.parentElement!;
+    const button = () => wrapper.querySelector(".style-control-value") as HTMLButtonElement;
+    const input = () => wrapper.querySelector(".style-control-number-input") as HTMLInputElement;
+    return { ...fixture, onLayerStyleChange, editor, slider, button, input, property };
+  }
+
+  it("focuses exact entry and applies once to every native member, then allows slider edits", async () => {
+    const user = userEvent.setup();
+    const f = setup();
+    f.internals.nativeLayerGroups.set("native-primary", ["native-primary", "native-secondary"]);
+    await user.click(f.button());
+    expect(document.activeElement).toBe(f.input());
+    expect(f.input().value).toBe("2.0");
+    expect(f.slider.isConnected).toBe(true);
+    await user.clear(f.input());
+    await user.type(f.input(), "3.7{Enter}");
+
+    expect(f.paintProps.get(f.key("native-primary", "line-width"))).toBe(3.7);
+    expect(f.paintProps.get(f.key("native-secondary", "line-width"))).toBe(3.7);
+    expect(f.onLayerStyleChange).toHaveBeenCalledExactlyOnceWith("outer-layer", "line-width", 3.7);
+    expect(f.button().textContent).toBe("3.7");
+    expect(document.activeElement).toBe(f.button());
+    // Reopening reads the exact paint value, not the range thumb's coarse step.
+    await user.keyboard("{Enter}");
+    expect(f.input().value).toBe("3.7");
+    await user.keyboard("{Escape}");
+    expect(f.onLayerStyleChange).toHaveBeenCalledTimes(1);
+
+    f.slider.value = "4.5";
+    f.slider.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(f.paintProps.get(f.key("native-secondary", "line-width"))).toBe(4.5);
+    expect(f.button().textContent).toBe("4.5");
+    expect(f.onLayerStyleChange).toHaveBeenLastCalledWith("outer-layer", "line-width", 4.5);
+  });
+
+  it.each([
+    ["line", "line-width", 2, "3.74", 3.7, "0", "20", "0.1"],
+    ["line", "line-opacity", 0.8, "0.376", 0.38, "0", "1", "0.01"],
+    ["line", "line-blur", 0, "1.26", 1.3, "0", "5", "0.1"],
+    ["circle", "circle-radius", 5, "50", 40, "0", "40", "0.1"],
+    ["raster", "raster-opacity", 1, "-2", 0, "0", "1", "0.01"],
+    ["raster", "raster-saturation", 0, "-0.376", -0.38, "-1", "1", "0.01"],
+    ["raster", "raster-hue-rotate", 0, "42.7", 43, "0", "350", "1"],
+    ["fill", "fill-opacity", 0.8, "4", 1, "0", "1", "0.01"],
+    ["symbol", "text-opacity", 0.8, "0.23", 0.23, "0", "1", "0.01"],
+  ])("preserves %s %s range and precision on blur", async (
+    layerType, property, initial, entered, applied, min, max, precision,
+  ) => {
+    const user = userEvent.setup();
+    const f = setup(layerType, property, initial);
+    const sliderStep = f.slider.step;
+    await user.click(f.button());
+    expect(f.input().min).toBe(min);
+    expect(f.input().max).toBe(max);
+    expect(f.input().step).toBe(precision);
+    await user.clear(f.input());
+    await user.type(f.input(), entered);
+    await user.tab();
+    expect(f.paintProps.get(f.key("native-primary", property))).toBe(applied);
+    expect(f.onLayerStyleChange).toHaveBeenCalledExactlyOnceWith("outer-layer", property, applied);
+    expect(f.input()).toBeNull();
+    expect(f.slider.step).toBe(sliderStep);
+  });
+
+  it("cancels Escape and ignores empty or invalid entries without paint or callback changes", async () => {
+    const user = userEvent.setup();
+    const f = setup();
+    await user.click(f.button());
+    await user.clear(f.input());
+    await user.type(f.input(), "9{Escape}");
+    expect(f.paintProps.get(f.key("native-primary", "line-width"))).toBe(2);
+    expect(f.button().textContent).toBe("2.0");
+    expect(document.activeElement).toBe(f.button());
+    for (const invalid of ["", "not-a-number"]) {
+      await user.click(f.button());
+      f.input().value = invalid;
+      await user.keyboard("{Enter}");
+      expect(f.paintProps.get(f.key("native-primary", "line-width"))).toBe(2);
+      expect(f.button().textContent).toBe("2.0");
+    }
+    expect(f.onLayerStyleChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps an active draft intact during map refresh and reads external values on reopening", async () => {
+    const user = userEvent.setup();
+    const f = setup();
+    await user.click(f.button());
+    await user.clear(f.input());
+    await user.type(f.input(), "3.7");
+    f.paintProps.set(f.key("native-primary", "line-width"), 8);
+    f.control.refreshStyleEditor();
+    expect(f.input().value).toBe("3.7");
+    expect(document.activeElement).toBe(f.input());
+    await user.keyboard("{Escape}");
+    f.control.refreshStyleEditor();
+    expect(f.button().textContent).toBe("8.0");
+    await user.click(f.button());
+    expect(f.input().value).toBe("8.0");
+    expect(f.onLayerStyleChange).not.toHaveBeenCalled();
   });
 });
