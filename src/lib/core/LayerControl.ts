@@ -3126,10 +3126,11 @@ export class LayerControl implements IControl {
           if (!property || !sourceId) return;
           const value = this.map.getPaintProperty(sourceId, property);
           if (value !== undefined) {
-            this.notifyLayerStyleChange(
-              property,
-              typeof value === "number" ? value : normalizeColor(value),
-            );
+            const color =
+              typeof value === "number" ? value : normalizeColor(value);
+            if (color !== null) {
+              this.notifyLayerStyleChange(property, color);
+            }
           }
         });
       }
@@ -3336,13 +3337,16 @@ export class LayerControl implements IControl {
       fillColor = this.map.getPaintProperty(layerId, "fill-color");
     }
 
-    this.createColorControl(
-      container,
-      layerId,
-      "fill-color",
-      "Fill Color",
-      normalizeColor(fillColor || "#088"),
-    );
+    const normalizedFillColor = normalizeColor(fillColor || "#088");
+    if (normalizedFillColor !== null) {
+      this.createColorControl(
+        container,
+        layerId,
+        "fill-color",
+        "Fill Color",
+        normalizedFillColor,
+      );
+    }
 
     // Fill Opacity
     const fillOpacity = this.map.getPaintProperty(layerId, "fill-opacity");
@@ -3365,15 +3369,19 @@ export class LayerControl implements IControl {
       "fill-outline-color",
     );
     if (outlineColor !== undefined) {
-      this.createColorControl(
-        container,
-        layerId,
-        "fill-outline-color",
-        "Outline Color",
-        normalizeColor(outlineColor),
-      );
+      const normalizedOutlineColor = normalizeColor(outlineColor);
+      if (normalizedOutlineColor !== null) {
+        this.createColorControl(
+          container,
+          layerId,
+          "fill-outline-color",
+          "Outline Color",
+          normalizedOutlineColor,
+        );
+      }
     }
   }
+
 
   /**
    * Add controls for line layers
@@ -3399,13 +3407,16 @@ export class LayerControl implements IControl {
       lineColor = this.map.getPaintProperty(layerId, "line-color");
     }
 
-    this.createColorControl(
-      container,
-      layerId,
-      "line-color",
-      "Line Color",
-      normalizeColor(lineColor || "#000"),
-    );
+    const normalizedLineColor = normalizeColor(lineColor || "#000");
+    if (normalizedLineColor !== null) {
+      this.createColorControl(
+        container,
+        layerId,
+        "line-color",
+        "Line Color",
+        normalizedLineColor,
+      );
+    }
 
     // Line Width
     const lineWidth = this.map.getPaintProperty(layerId, "line-width");
@@ -3475,13 +3486,16 @@ export class LayerControl implements IControl {
       circleColor = this.map.getPaintProperty(layerId, "circle-color");
     }
 
-    this.createColorControl(
-      container,
-      layerId,
-      "circle-color",
-      "Circle Color",
-      normalizeColor(circleColor || "#000"),
-    );
+    const normalizedCircleColor = normalizeColor(circleColor || "#000");
+    if (normalizedCircleColor !== null) {
+      this.createColorControl(
+        container,
+        layerId,
+        "circle-color",
+        "Circle Color",
+        normalizedCircleColor,
+      );
+    }
 
     // Circle Radius
     const circleRadius = this.map.getPaintProperty(layerId, "circle-radius");
@@ -3517,13 +3531,16 @@ export class LayerControl implements IControl {
       "circle-stroke-color",
     );
     if (strokeColor !== undefined) {
-      this.createColorControl(
-        container,
-        layerId,
-        "circle-stroke-color",
-        "Stroke Color",
-        normalizeColor(strokeColor),
-      );
+      const normalizedStrokeColor = normalizeColor(strokeColor);
+      if (normalizedStrokeColor !== null) {
+        this.createColorControl(
+          container,
+          layerId,
+          "circle-stroke-color",
+          "Stroke Color",
+          normalizedStrokeColor,
+        );
+      }
     }
 
     // Circle Stroke Width
@@ -3641,15 +3658,17 @@ export class LayerControl implements IControl {
     // Text Color
     const textColor = this.map.getPaintProperty(layerId, "text-color");
     if (textColor !== undefined) {
-      this.createColorControl(
-        container,
-        layerId,
-        "text-color",
-        "Text Color",
-        normalizeColor(textColor),
-      );
+      const normalizedTextColor = normalizeColor(textColor);
+      if (normalizedTextColor !== null) {
+        this.createColorControl(
+          container,
+          layerId,
+          "text-color",
+          "Text Color",
+          normalizedTextColor,
+        );
+      }
     }
-
     // Text Opacity
     const textOpacity = this.map.getPaintProperty(layerId, "text-opacity");
     if (textOpacity !== undefined && typeof textOpacity === "number") {
@@ -3755,6 +3774,7 @@ export class LayerControl implements IControl {
       const value = this.map.getPaintProperty(sourceId, property);
       if (value !== undefined) {
         const hexColor = normalizeColor(value);
+        if (hexColor === null) return;
         picker.value = hexColor;
         const hexDisplay = picker.parentElement?.querySelector(
           ".style-control-color-value",
@@ -3924,6 +3944,7 @@ export class LayerControl implements IControl {
           const value = this.map.getPaintProperty(layerId, property);
           if (value !== undefined) {
             const hexColor = normalizeColor(value);
+            if (hexColor === null) return;
             picker.value = hexColor;
             // Update hex display
             const hexDisplay = picker.parentElement?.querySelector(
