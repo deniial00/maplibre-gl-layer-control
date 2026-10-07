@@ -16,10 +16,10 @@
 <body>
   <div id="map"></div>
   <aside>
-    <h1>Pattern-fill previews</h1>
-    <p>Raster stripes retain their colours. Both SDF swatches use the same dot image, tinted with each layer's fill colour.</p>
+    <h1>Pattern fills</h1>
+    <p>Open a layer's style editor (gear icon) to pick a Fill Pattern. "dots" is an SDF image: Fill Color recolours it per layer, so the pink and blue layers share one image. "stripes" keeps its own colours and disables Fill Color while selected. None restores a solid fill; Reset Style restores the original.</p>
     <button id="tint" disabled>Change SDF tint</button>
-    <p>MapLibre GL JS 6.13 colours the SDF patterns on the map too. The tint button changes the pink layer and its preview together.</p>
+    <p>Recoloured SDF patterns on the map need MapLibre GL JS 6.8.0 or later (this example uses 6.13).</p>
   </aside>
   <script type="module">
     import * as maplibregl from 'maplibre-gl';
@@ -56,21 +56,29 @@
       const layers = [
         ['raster-stripes', 'stripes', '#1ea064'],
         ['sdf-pink', 'dots', '#db2777'],
-        ['sdf-blue', 'dots', '#2563eb']
+        ['sdf-blue', 'dots', '#2563eb'],
+        ['solid-fill', null, '#f59e0b']
       ];
       layers.forEach(([id, pattern, color], index) => {
-        const west = -54 + index * 36;
+        const west = -72 + index * 36;
         map.addSource(id, { type: 'geojson', data: {
           type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [
             [[west, -14], [west + 28, -14], [west + 28, 14], [west, 14], [west, -14]]
           ] }
         } });
-        map.addLayer({ id, type: 'fill', source: id,
-          paint: { 'fill-pattern': pattern, 'fill-color': color } });
+        const paint = pattern
+          ? { 'fill-pattern': pattern, 'fill-color': color }
+          : { 'fill-color': color };
+        map.addLayer({ id, type: 'fill', source: id, paint });
       });
-      map.addControl(new LayerControl({
-        collapsed: false, layers: layers.map(([id]) => id), showStyleEditor: false
-      }), 'top-right');
+      const control = new LayerControl({
+        collapsed: false,
+        showStyleEditor: true,
+        layers: layers.map(([id]) => id),
+        onLayerStyleChange: (id, property, value) =>
+          console.log('style change', id, property, value)
+      });
+      map.addControl(control, 'top-right');
 
       const button = document.getElementById('tint');
       button.disabled = false;
@@ -79,6 +87,7 @@
         event.stopPropagation(); // Keep the preview panel open while tinting.
         teal = !teal;
         map.setPaintProperty('sdf-pink', 'fill-color', teal ? '#0d9488' : '#db2777');
+        control.refreshStyleEditor();
       });
     });
   </script>
