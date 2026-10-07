@@ -2617,17 +2617,13 @@ export class LayerControl implements IControl {
    * Set visibility for all background layers
    */
   private setAllBackgroundLayersVisibility(visible: boolean): void {
-    const styleLayers = this.map.getStyle().layers || [];
-
-    styleLayers.forEach((layer) => {
-      if (!this.isUserAddedLayer(layer.id)) {
-        this.state.backgroundLayerVisibility.set(layer.id, visible);
-        this.map.setLayoutProperty(
-          layer.id,
-          "visibility",
-          visible ? "visible" : "none",
-        );
-      }
+    this.getControllableBackgroundLayerIds().forEach((layerId) => {
+      this.state.backgroundLayerVisibility.set(layerId, visible);
+      this.map.setLayoutProperty(
+        layerId,
+        "visibility",
+        visible ? "visible" : "none",
+      );
     });
 
     // Update checkboxes in the legend panel
@@ -2651,16 +2647,13 @@ export class LayerControl implements IControl {
    * Update the main Background checkbox based on individual layer states
    */
   private updateBackgroundCheckboxState(): void {
-    const styleLayers = this.map.getStyle().layers || [];
     let anyVisible = false;
     let allVisible = true;
 
-    styleLayers.forEach((layer) => {
-      if (!this.isUserAddedLayer(layer.id)) {
-        const visible = this.state.backgroundLayerVisibility.get(layer.id);
-        if (visible === true) anyVisible = true;
-        if (visible === false) allVisible = false;
-      }
+    this.getControllableBackgroundLayerIds().forEach((layerId) => {
+      const visible = this.state.backgroundLayerVisibility.get(layerId);
+      if (visible === true) anyVisible = true;
+      if (visible === false) allVisible = false;
     });
 
     // Update main checkbox

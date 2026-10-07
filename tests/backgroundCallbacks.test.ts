@@ -84,3 +84,24 @@ describe("background visibility/opacity callbacks", () => {
     ).not.toThrow();
   });
 });
+
+describe("Show All / Hide All background layers", () => {
+  it("skips layers matching excludeLayers", () => {
+    const { control, layoutProps } = makeControl({
+      excludeLayers: ["labels"],
+    });
+
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    (control as any).setAllBackgroundLayersVisibility(false);
+
+    expect(layoutProps.get("water")).toBe("none");
+    expect(layoutProps.get("roads")).toBe("none");
+    expect(layoutProps.has("labels")).toBe(false);
+
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    (control as any).setAllBackgroundLayersVisibility(true);
+
+    expect(layoutProps.get("water")).toBe("visible");
+    expect(layoutProps.has("labels")).toBe(false);
+  });
+});
