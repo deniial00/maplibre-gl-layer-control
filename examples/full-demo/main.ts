@@ -1,7 +1,10 @@
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LayerControl } from '../../src/index';
 import '../../src/index.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 // Define the basemap style URL as a constant so it can be reused
 const BASEMAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';

@@ -31,20 +31,47 @@ A comprehensive layer control for MapLibre GL with advanced styling capabilities
 - ✅ **Custom layer adapters** - Integrate non-MapLibre layers (deck.gl, Zarr, etc.)
 - ✅ **Layer groups** - Nest an adapter's layers in collapsible, nestable folders with their own visibility checkbox and opacity slider
 
+### Pattern-fill previews
+
+Fill-layer symbols and background-legend symbols display `fill-pattern` images
+from the map's sprite or `map.addImage()`. Regular images retain their colours
+and transparency. Images registered with `{ sdf: true }` are decoded from their
+alpha distance field and tinted with the preview's `fill-color` (black when
+unspecified), rather than shown as raw distance-field pixels.
+
+The preview respects image `pixelRatio` and scales large tiles down to keep the
+repeating motif visible. Paint changes and newly loaded images refresh existing
+symbols. `map.updateImage()` changes appear on the next map `idle` event; call
+`map.triggerRepaint()` if no render is pending. Missing images retain the solid
+fill preview until the image becomes available.
+
+For expressions, the preview uses the first available literal image output;
+it does not evaluate feature-dependent image names. MapLibre GL JS 6.13 supports
+SDF fill colourization on the map as well; older renderers may show raw SDF pixels
+even when the control displays a tinted preview.
+
 ## Installation
 
 ```bash
 npm install maplibre-gl-layer-control
 ```
 
+The development setup and examples use MapLibre GL JS 6.13.0. Version 6 uses
+named ESM exports. Vite apps must configure the worker with `?worker&url`, as
+shown below; direct CDN module imports auto-detect it. See the
+[v5-to-v6 migration guide](https://maplibre.org/maplibre-gl-js/docs/guides/v5-to-v6-migration-guide/).
+
 ## Quick Start
 
 ### Vanilla JavaScript
 
 ```typescript
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LayerControl } from 'maplibre-gl-layer-control';
 import 'maplibre-gl-layer-control/style.css';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 const map = new maplibregl.Map({
   container: 'map',
@@ -117,10 +144,14 @@ map.on('load', () => {
 
 ```typescript
 import { useState, useEffect } from 'react';
-import maplibregl, { Map as MapLibreMap } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { Map as MapLibreMap } from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LayerControlReact } from 'maplibre-gl-layer-control/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import 'maplibre-gl-layer-control/style.css';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 function MapComponent() {
   const [map, setMap] = useState<MapLibreMap | null>(null);

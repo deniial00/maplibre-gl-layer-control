@@ -2,6 +2,7 @@ import type {
   IControl,
   Map as MapLibreMap,
   LayerSpecification,
+  AllPaintProperties,
 } from "maplibre-gl";
 import type {
   LayerControlOptions,
@@ -30,7 +31,6 @@ import {
   getLayerColor,
   getLayerColorFromSpec,
   getLayerSymbolStyle,
-  getLayerSymbolStyleFromSpec,
   createLayerSymbolSVG,
   createBackgroundGroupSymbolSVG,
 } from "../utils/symbolUtils";
@@ -1189,11 +1189,15 @@ export class LayerControl implements IControl {
       setTimeout(() => {
         this.updateLayerStatesFromMap();
         this.checkForNewLayers();
+        this.updateFillSymbols();
       }, 100);
     });
 
+    // Observe updated image pixels after the next completed map render.
+    this.map.on("idle", () => this.updateFillSymbols());
+
     this.map.on("data", (e) => {
-      if (e.sourceDataType === "content") {
+      if ("sourceDataType" in e && e.sourceDataType === "content") {
         setTimeout(() => {
           this.updateLayerStatesFromMap();
           this.checkForNewLayers();
@@ -1789,6 +1793,7 @@ export class LayerControl implements IControl {
     symbolContainer.className = "layer-control-symbol";
     symbolContainer.innerHTML = svgMarkup;
     symbolContainer.title = `Layer type: ${layerType}`;
+    if (layerType === "fill") symbolContainer.dataset.previewLayerId = layerId;
 
     return symbolContainer;
   }
@@ -1800,18 +1805,35 @@ export class LayerControl implements IControl {
    */
   private createBackgroundLayerSymbol(layer: LayerSpecification): HTMLElement {
     const color = getLayerColorFromSpec(layer);
-    const symbolStyle = getLayerSymbolStyleFromSpec(layer);
+    const symbolStyle = getLayerSymbolStyle(this.map, layer.id, layer.type);
     const svgMarkup = createLayerSymbolSVG(layer.type, color, {
-      size: 14,
       ...symbolStyle,
+      size: 14,
     });
 
     const symbolContainer = document.createElement("span");
     symbolContainer.className = "background-legend-layer-symbol";
     symbolContainer.innerHTML = svgMarkup;
     symbolContainer.title = `Layer type: ${layer.type}`;
+    if (layer.type === "fill") symbolContainer.dataset.previewLayerId = layer.id;
 
     return symbolContainer;
+  }
+
+  /** Refresh pattern images and SDF tint after paint, sprite, or image changes. */
+  private updateFillSymbols(): void {
+    this.panel.querySelectorAll<HTMLElement>("[data-preview-layer-id]").forEach((symbol) => {
+      const layerId = symbol.dataset.previewLayerId!;
+      if (!this.map.getLayer(layerId)) return;
+      symbol.innerHTML = createLayerSymbolSVG(
+        "fill",
+        getLayerColor(this.map, layerId, "fill"),
+        {
+          ...getLayerSymbolStyle(this.map, layerId, "fill"),
+          size: symbol.classList.contains("background-legend-layer-symbol") ? 14 : 16,
+        },
+      );
+    });
   }
 
   /**
@@ -3121,7 +3143,7 @@ export class LayerControl implements IControl {
       if (this.onLayerStyleChange) {
         editor.querySelectorAll("[data-property]").forEach((el) => {
           const control = el as HTMLElement;
-          const property = control.dataset.property;
+          const property = control.dataset.property as keyof AllPaintProperties | undefined;
           const sourceId = control.dataset.layerId;
           if (!property || !sourceId) return;
           const value = this.map.getPaintProperty(sourceId, property);
@@ -3747,7 +3769,7 @@ export class LayerControl implements IControl {
     ) as NodeListOf<HTMLInputElement>;
     sliders.forEach((slider) => {
       if (slider === active) return;
-      const property = slider.dataset.property;
+      const property = slider.dataset.property as keyof AllPaintProperties | undefined;
       const sourceId = slider.dataset.layerId;
       if (!property || !sourceId) return;
       const value = this.map.getPaintProperty(sourceId, property);
@@ -3768,7 +3790,7 @@ export class LayerControl implements IControl {
     ) as NodeListOf<HTMLInputElement>;
     colorPickers.forEach((picker) => {
       if (picker === active) return;
-      const property = picker.dataset.property;
+      const property = picker.dataset.property as keyof AllPaintProperties | undefined;
       const sourceId = picker.dataset.layerId;
       if (!property || !sourceId) return;
       const value = this.map.getPaintProperty(sourceId, property);
@@ -3790,7 +3812,7 @@ export class LayerControl implements IControl {
   private createColorControl(
     container: HTMLElement,
     layerId: string,
-    property: string,
+    property: keyof AllPaintProperties,
     label: string,
     initialValue: string,
   ): void {
@@ -3845,7 +3867,7 @@ export class LayerControl implements IControl {
   private createSliderControl(
     container: HTMLElement,
     layerId: string,
-    property: string,
+    property: keyof AllPaintProperties,
     label: string,
     initialValue: number,
     min: number,
@@ -3916,7 +3938,7 @@ export class LayerControl implements IControl {
         ".style-control-slider",
       ) as NodeListOf<HTMLInputElement>;
       sliders.forEach((slider) => {
-        const property = slider.dataset.property;
+        const property = slider.dataset.property as keyof AllPaintProperties | undefined;
         if (property) {
           const value = this.map.getPaintProperty(layerId, property);
           if (value !== undefined && typeof value === "number") {
@@ -3939,7 +3961,7 @@ export class LayerControl implements IControl {
         ".style-control-color-picker",
       ) as NodeListOf<HTMLInputElement>;
       colorPickers.forEach((picker) => {
-        const property = picker.dataset.property;
+        const property = picker.dataset.property as keyof AllPaintProperties | undefined;
         if (property) {
           const value = this.map.getPaintProperty(layerId, property);
           if (value !== undefined) {

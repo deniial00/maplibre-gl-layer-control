@@ -1,10 +1,10 @@
-import type { Map as MapLibreMap, LayerSpecification } from 'maplibre-gl';
+import type { Map as MapLibreMap, LayerSpecification, AllPaintProperties } from 'maplibre-gl';
 import { normalizeColor, rgbToHex } from './colorUtils';
 
 /**
  * Map of layer types to their primary color property
  */
-const COLOR_PROPERTY_MAP: Record<string, string[]> = {
+const COLOR_PROPERTY_MAP: Record<string, (keyof AllPaintProperties)[]> = {
   fill: ['fill-color', 'fill-outline-color'],
   line: ['line-color'],
   circle: ['circle-color', 'circle-stroke-color'],
@@ -183,6 +183,8 @@ export interface LayerSymbolStyle {
   dasharray?: number[];
   /** Circle border colour; null disables the border. */
   strokeColor?: string | null;
+  /** Registered MapLibre image for a fill-pattern; SDF images use the fill color. */
+  fillPattern?: FillPatternImage;
 }
 
 /**
@@ -222,7 +224,7 @@ function extractDasharray(value: unknown): number[] | null {
  */
 function resolveSymbolStyle(
   layerType: string,
-  getPaint: (property: string) => unknown
+  getPaint: (property: keyof AllPaintProperties) => unknown
 ): LayerSymbolStyle {
   if (layerType === 'line') {
     const dasharray = extractDasharray(getPaint('line-dasharray'));
@@ -253,14 +255,31 @@ function resolveSymbolStyle(
  * @param map The MapLibre map instance
  * @param layerId The layer ID
  * @param layerType The layer type
- * @returns The resolved dash pattern or circle border style
+ * @returns The resolved dash pattern, circle border style, or fill pattern
  */
 export function getLayerSymbolStyle(
   map: MapLibreMap,
   layerId: string,
   layerType: string
 ): LayerSymbolStyle {
-  const getPaint = (property: string): unknown => {
+  if (layerType === 'fill') {
+    let pattern: unknown;
+    try {
+      pattern = map.getPaintProperty(layerId, 'fill-pattern');
+    } catch {
+      // Fall back to the style definition when runtime paint is unavailable.
+    }
+    if (pattern === undefined) {
+      const layer = map.getStyle()?.layers?.find((item) => item.id === layerId);
+      if (layer && 'paint' in layer && layer.paint) {
+        pattern = (layer.paint as Record<string, unknown>)['fill-pattern'];
+      }
+    }
+    const fillPattern = resolvePatternImage(map, pattern);
+    return fillPattern ? { fillPattern } : {};
+  }
+
+  const getPaint = (property: keyof AllPaintProperties): unknown => {
     let value: unknown;
     try {
       value = map.getPaintProperty(layerId, property);
@@ -287,7 +306,7 @@ export function getLayerSymbolStyle(
 export function getLayerSymbolStyleFromSpec(
   layer: LayerSpecification
 ): LayerSymbolStyle {
-  const getPaint = (property: string): unknown => {
+  const getPaint = (property: keyof AllPaintProperties): unknown => {
     if ('paint' in layer && layer.paint) {
       return (layer.paint as Record<string, unknown>)[property];
     }
@@ -297,6 +316,120 @@ export function getLayerSymbolStyleFromSpec(
   return resolveSymbolStyle(layer.type, getPaint);
 }
 
+/**
+ * Resolve a representative registered image from a fill-pattern expression.
+ * Only visit output values, never match labels or condition operands.
+ */
+function resolvePatternImage(
+  map: MapLibreMap,
+  value: unknown
+): FillPatternImage | undefined {
+  if (typeof value === 'string') return map.getImage(value);
+  if (!Array.isArray(value)) return undefined;
+
+  const [operator] = value;
+  let start: number;
+  let stride: number;
+  switch (operator) {
+    case 'literal':
+    case 'image':
+      return typeof value[1] === 'string' ? map.getImage(value[1]) : undefined;
+    case 'coalesce':
+      start = 1;
+      stride = 1;
+      break;
+    case 'match':
+      start = 3;
+      stride = 2;
+      break;
+    case 'case':
+    case 'step':
+      start = 2;
+      stride = 2;
+      break;
+    case 'interpolate':
+    case 'interpolate-hcl':
+    case 'interpolate-lab':
+      start = 4;
+      stride = 2;
+      break;
+    default:
+      return undefined;
+  }
+  for (let i = start; i < value.length; i += stride) {
+    const image = resolvePatternImage(map, value[i]);
+    if (image) return image;
+  }
+  // match/case have a final fallback outside the output/stop pairs.
+  if (operator === 'match' || operator === 'case') {
+    return resolvePatternImage(map, value[value.length - 1]);
+  }
+  return undefined;
+}
+
+/** Registered pattern pixels and metadata, compatible with map.getImage(). */
+export interface FillPatternImage {
+  data: {
+    width: number;
+    height: number;
+    data: Uint8Array | Uint8ClampedArray;
+  };
+  pixelRatio: number;
+  sdf: boolean;
+  /** Incremented by MapLibre when image pixels change. */
+  version?: number;
+}
+const patternTiles = new WeakMap<
+  FillPatternImage,
+  { version: number | undefined; urls: Map<string, string> }
+>();
+
+/** Convert RGBA pixels or an SDF alpha channel into a browser-renderable tile. */
+function createPatternTile(image: FillPatternImage, color: string): string | null {
+  const key = image.sdf ? color : '';
+  let cached = patternTiles.get(image);
+  if (cached?.version !== image.version) cached = undefined;
+  const existing = cached?.urls.get(key);
+  if (existing) return existing;
+  if (typeof document === 'undefined') return null;
+
+  const { width, height, data } = image.data;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  const pixels = context.createImageData(width, height);
+  if (image.sdf) {
+    const normalizedColor = normalizeColor(color);
+    if (normalizedColor === null) return null;
+    const r = parseInt(normalizedColor.slice(1, 3), 16);
+    const g = parseInt(normalizedColor.slice(3, 5), 16);
+    const b = parseInt(normalizedColor.slice(5, 7), 16);
+    // MapLibre's SDF contour is 0.75; smoothstep preserves antialiased edges.
+    const gamma = 0.105 / image.pixelRatio;
+    for (let i = 0; i < data.length; i += 4) {
+      const t = Math.max(
+        0,
+        Math.min(1, (data[i + 3] / 255 - 0.75 + gamma) / (2 * gamma))
+      );
+      pixels.data[i] = r;
+      pixels.data[i + 1] = g;
+      pixels.data[i + 2] = b;
+      pixels.data[i + 3] = Math.round(255 * t * t * (3 - 2 * t));
+    }
+  } else {
+    pixels.data.set(data);
+  }
+  context.putImageData(pixels, 0, 0);
+  const url = canvas.toDataURL();
+  if (!cached) {
+    cached = { version: image.version, urls: new Map() };
+    patternTiles.set(image, cached);
+  }
+  cached.urls.set(key, url);
+  return url;
+}
 
 /**
  * Darken a hex color by a given amount
@@ -331,9 +464,33 @@ export function darkenColor(hexColor: string, amount: number): string {
 /**
  * Create a fill symbol (filled rectangle)
  */
-function createFillSymbol(size: number, color: string): string {
+function createFillSymbol(
+  size: number,
+  color: string,
+  image?: FillPatternImage
+): string {
   const padding = 2;
   const borderColor = darkenColor(color, 0.3);
+  if (image) {
+    const url = createPatternTile(image, color);
+    if (url) {
+      const id = `fillPattern_${Math.random().toString(36).slice(2, 9)}`;
+      const width = image.data.width / image.pixelRatio;
+      const height = image.data.height / image.pixelRatio;
+      // Keep small patterns at their natural scale; fit two large tiles in
+      // the swatch so the repeating motif remains recognizable.
+      const scale = Math.min(1, (size - padding * 2) / (2 * Math.max(width, height)));
+      return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="${id}" patternUnits="userSpaceOnUse" x="${padding}" y="${padding}" width="${width * scale}" height="${height * scale}">
+            <image href="${url}" width="${width * scale}" height="${height * scale}"/>
+          </pattern>
+        </defs>
+        <rect x="${padding}" y="${padding}" width="${size - padding * 2}" height="${size - padding * 2}"
+              fill="url(#${id})" stroke="${borderColor}" stroke-width="1" rx="1"/>
+      </svg>`;
+    }
+  }
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
     <rect x="${padding}" y="${padding}" width="${size - padding * 2}" height="${size - padding * 2}"
           fill="${color}" stroke="${borderColor}" stroke-width="1" rx="1"/>
@@ -602,6 +759,8 @@ export interface SymbolOptions {
   dasharray?: number[];
   /** Circle border colour; null disables the border. */
   strokeColor?: string | null;
+  /** Registered MapLibre image for a fill-pattern; SDF images use the fill color. */
+  fillPattern?: FillPatternImage;
 }
 
 /**
@@ -618,11 +777,11 @@ export function createLayerSymbolSVG(
 ): string {
   const size = options.size || 16;
   const strokeWidth = options.strokeWidth || 2;
-  const fillColor = color || '#888888'; // Fallback gray
+  const fillColor = color || (options.fillPattern?.sdf ? '#000000' : '#888888');
 
   switch (layerType) {
     case 'fill':
-      return createFillSymbol(size, fillColor);
+      return createFillSymbol(size, fillColor, options.fillPattern);
     case 'line':
       return createLineSymbol(size, fillColor, strokeWidth, options.dasharray);
     case 'circle':
