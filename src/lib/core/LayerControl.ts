@@ -35,6 +35,8 @@ import {
   createLayerSymbolSVG,
   createBackgroundGroupSymbolSVG,
   createCategorizedSymbolSVG,
+  listPatternImages,
+  type FillPatternImage,
 } from "../utils/symbolUtils";
 
 /**
@@ -3239,6 +3241,13 @@ export class LayerControl implements IControl {
           const property = control.dataset.property as keyof AllPaintProperties | undefined;
           const sourceId = control.dataset.layerId;
           if (!property || !sourceId) return;
+          if (property === "fill-pattern") {
+            this.notifyLayerStyleChange(
+              property,
+              this.map.getPaintProperty(sourceId, property),
+            );
+            return;
+          }
           const value = this.map.getPaintProperty(sourceId, property);
           if (value !== undefined) {
             const color =
@@ -3463,6 +3472,21 @@ export class LayerControl implements IControl {
       );
     }
 
+    const patternGroup = document.createElement("div");
+    patternGroup.className = "style-control-group style-control-pattern-group";
+    patternGroup.dataset.property = "fill-pattern";
+    patternGroup.dataset.layerId = layerId;
+    container.appendChild(patternGroup);
+    this.renderFillPatternPicker(patternGroup, layerId);
+
+    container
+      .querySelector<HTMLInputElement>(
+        '.style-control-color-picker[data-property="fill-color"]',
+      )
+      ?.addEventListener("change", () =>
+        this.renderFillPatternPicker(patternGroup, layerId),
+      );
+
     // Fill Opacity
     const fillOpacity = this.map.getPaintProperty(layerId, "fill-opacity");
     if (fillOpacity !== undefined && typeof fillOpacity === "number") {
@@ -3497,6 +3521,176 @@ export class LayerControl implements IControl {
     }
   }
 
+  private renderFillPatternPicker(group: HTMLElement, layerId: string): void {
+    group.replaceChildren();
+
+    const targetIds = this.nativeLayerGroups.get(layerId) || [layerId];
+    const currentValues = targetIds.map((id) =>
+      this.map.getPaintProperty(id, "fill-pattern"),
+    );
+    const firstValue = currentValues[0];
+    const firstValueIsUnset =
+      firstValue === undefined || firstValue === null || firstValue === "";
+    const mixed = currentValues.some((value) => {
+      const valueIsUnset =
+        value === undefined || value === null || value === "";
+      if (valueIsUnset !== firstValueIsUnset) return true;
+      return !valueIsUnset && JSON.stringify(value) !== JSON.stringify(firstValue);
+    });
+    const current = mixed ? undefined : firstValue;
+    const images = listPatternImages(this.map);
+    const color = getLayerColor(this.map, layerId, "fill");
+    const kind = mixed
+      ? "mixed"
+      : current === undefined || current === null || current === ""
+        ? "none"
+        : typeof current === "string"
+          ? "constant"
+          : "expression";
+    const selectedImage =
+      kind === "constant"
+        ? images.find((entry) => entry.id === current)
+        : undefined;
+    const missing = kind === "constant" && !selectedImage;
+    const nonSdfPatternSelected = currentValues.some(
+      (value) =>
+        typeof value === "string" &&
+        images.some((entry) => entry.id === value && !entry.image.sdf),
+    );
+    const fillColorPicker = group.parentElement?.querySelector<HTMLInputElement>(
+      '.style-control-color-picker[data-property="fill-color"]',
+    );
+    if (fillColorPicker) {
+      fillColorPicker.disabled = nonSdfPatternSelected;
+      const colorValue =
+        fillColorPicker.parentElement?.querySelector<HTMLInputElement>(
+          ".style-control-color-value",
+        );
+      if (colorValue) colorValue.disabled = nonSdfPatternSelected;
+    }
+
+    const label = document.createElement("label");
+    label.className = "style-control-label";
+    label.textContent = "Fill Pattern";
+    group.appendChild(label);
+
+    const currentLabel = document.createElement("div");
+    currentLabel.className = "style-control-pattern-current";
+    if (mixed) {
+      currentLabel.textContent = "Current: Multiple patterns";
+    } else if (kind === "none") {
+      currentLabel.textContent = "Current: None (solid fill)";
+    } else if (kind === "constant" && missing) {
+      currentLabel.textContent = `Current: ${current} (image not loaded)`;
+    } else if (kind === "constant") {
+      currentLabel.textContent = `Current: ${current}`;
+    } else {
+      currentLabel.textContent =
+        "Current: data-driven expression — select a pattern or None to replace it";
+    }
+    group.appendChild(currentLabel);
+
+    const list = document.createElement("div");
+    list.className = "style-control-pattern-list";
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Fill pattern");
+
+    const addOption = (
+      patternId: string | null,
+      optionLabel: string,
+      image?: FillPatternImage,
+      disabled = false,
+    ): void => {
+      const option = document.createElement("button");
+      option.className = "style-control-pattern-option";
+      option.type = "button";
+      option.setAttribute("role", "option");
+      option.dataset.patternId = patternId ?? "";
+      option.title = optionLabel;
+      option.disabled = disabled;
+      option.setAttribute(
+        "aria-selected",
+        String(
+          !mixed &&
+            ((patternId === null && kind === "none") ||
+              (kind === "constant" && patternId === current)),
+        ),
+      );
+
+      const swatch = document.createElement("span");
+      swatch.className = "style-control-pattern-swatch";
+      swatch.innerHTML = createLayerSymbolSVG("fill", color, {
+        fillPattern: image,
+        size: 20,
+      });
+
+      const name = document.createElement("span");
+      name.className = "style-control-pattern-name";
+      name.textContent = optionLabel;
+      option.append(swatch, name);
+
+      if (image?.sdf) {
+        const badge = document.createElement("span");
+        badge.className = "style-control-pattern-badge";
+        badge.textContent = "SDF";
+        option.appendChild(badge);
+      }
+
+      if (!disabled) {
+        option.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (option.getAttribute("aria-selected") === "true") return;
+
+          const value = patternId ?? undefined;
+          for (const id of targetIds) {
+            this.map.setPaintProperty(id, "fill-pattern", value);
+          }
+          this.notifyLayerStyleChange("fill-pattern", value);
+          this.renderFillPatternPicker(group, layerId);
+          group
+            .querySelector<HTMLButtonElement>(
+              '.style-control-pattern-option[aria-selected="true"]',
+            )
+            ?.focus();
+        });
+      }
+      list.appendChild(option);
+    };
+
+    if (missing) {
+      addOption(current as string, `${current} (not loaded)`, undefined, true);
+    }
+    addOption(null, "None (solid fill)");
+    images.forEach(({ id, image }) => addOption(id, id, image));
+    group.appendChild(list);
+
+    if (images.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "style-control-pattern-empty";
+      empty.textContent = "No images loaded in the map style.";
+      group.appendChild(empty);
+    }
+
+    const hint = document.createElement("div");
+    hint.className = "style-control-pattern-hint";
+    if (mixed) {
+      hint.textContent = nonSdfPatternSelected
+        ? "Grouped layers use different patterns. Fill Color is disabled because at least one uses a non-SDF pattern. Selecting an option applies it to all."
+        : "Grouped layers use different patterns. Selecting an option applies it to all.";
+    } else if (kind === "none" || kind === "expression") {
+      hint.hidden = true;
+    } else if (missing) {
+      hint.textContent =
+        "This image is not loaded in the map. The layer is unchanged until you choose another option.";
+    } else if (selectedImage?.image.sdf) {
+      hint.textContent =
+        "SDF pattern: Fill Color recolors this pattern for this layer only.";
+    } else {
+      hint.textContent =
+        "This pattern keeps its own colors; Fill Color is disabled while it is selected.";
+    }
+    group.appendChild(hint);
+  }
 
   /**
    * Add controls for line layers
@@ -3900,6 +4094,13 @@ export class LayerControl implements IControl {
         if (hexDisplay) hexDisplay.value = hexColor;
       }
     });
+    editor
+      .querySelectorAll<HTMLElement>(".style-control-pattern-group")
+      .forEach((group) => {
+        const sourceId = group.dataset.layerId;
+        if (sourceId) this.renderFillPatternPicker(group, sourceId);
+      });
+
   }
 
   /**
@@ -4126,6 +4327,17 @@ export class LayerControl implements IControl {
           }
         }
       });
+      editor
+        .querySelectorAll<HTMLElement>(".style-control-pattern-group")
+        .forEach((group) => {
+          const sourceId = group.dataset.layerId || layerId;
+          this.renderFillPatternPicker(group, sourceId);
+          this.notifyLayerStyleChange(
+            "fill-pattern",
+            this.map.getPaintProperty(sourceId, "fill-pattern"),
+          );
+        });
+
     }
   }
 

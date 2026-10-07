@@ -22,7 +22,7 @@ npm install maplibre-gl-layer-control maplibre-gl
 | [categorized-legend](./categorized-legend) | Match fill and case line legends with live category/plain-color switches |
 | [dynamic-layers](./dynamic-layers) | Auto-detect layers added before or after control |
 | [background-legend](./background-legend) | Control individual background layer visibility |
-| [pattern-fill](./pattern-fill) | Single-file raster and SDF pattern-preview demo with a tint button |
+| [pattern-fill](./pattern-fill) | Raster and SDF fill patterns with the style-editor pattern picker and a tint button |
 | [react](./react) | React integration example |
 
 ## Quick Start with npm

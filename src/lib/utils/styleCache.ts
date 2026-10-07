@@ -134,5 +134,18 @@ export function restoreOriginalStyle(
     }
   });
 
+  if (
+    !('fill-pattern' in original.paint) &&
+    typeof map.getLayer === 'function' &&
+    map.getLayer(layerId)?.type === 'fill'
+  ) {
+    try {
+      map.setPaintProperty(layerId, 'fill-pattern', undefined);
+      applied['fill-pattern'] = undefined;
+    } catch (error) {
+      console.warn(`Failed to restore fill-pattern for ${layerId}:`, error);
+    }
+  }
+
   return applied;
 }

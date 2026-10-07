@@ -449,6 +449,41 @@ export interface FillPatternImage {
   /** Incremented by MapLibre when image pixels change. */
   version?: number;
 }
+
+/** A registered map image usable as a fill-pattern. */
+export interface PatternImageEntry {
+  id: string;
+  image: FillPatternImage;
+}
+
+/** List images currently registered in the map (style sprite and addImage), sorted by ID. */
+export function listPatternImages(map: MapLibreMap): PatternImageEntry[] {
+  if (
+    typeof map.listImages !== 'function' ||
+    typeof map.getImage !== 'function'
+  ) {
+    return [];
+  }
+
+  let ids: string[];
+  try {
+    ids = map.listImages();
+  } catch {
+    return [];
+  }
+
+  const images: PatternImageEntry[] = [];
+  for (const id of ids) {
+    try {
+      const image = map.getImage(id) as FillPatternImage | undefined | null;
+      if (image?.data) images.push({ id, image });
+    } catch {
+      // Ignore images that are no longer available.
+    }
+  }
+  return images.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 const patternTiles = new WeakMap<
   FillPatternImage,
   { version: number | undefined; urls: Map<string, string> }

@@ -578,6 +578,81 @@
   font-weight: 500;
 }
 
+.style-control-color-picker:disabled,
+.style-control-color-value:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.style-control-pattern-current,
+.style-control-pattern-hint,
+.style-control-pattern-empty {
+  font-size: 11px;
+  color: #5c6a7d;
+  line-height: 1.35;
+}
+
+.style-control-pattern-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid #d0d7e2;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.style-control-pattern-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: #3a4756;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.style-control-pattern-option:hover:not(:disabled) {
+  background: #eef3fd;
+}
+
+.style-control-pattern-option[aria-selected="true"] {
+  background: #dce7fd;
+  font-weight: 600;
+}
+
+.style-control-pattern-option:disabled {
+  cursor: default;
+  color: #a33a3a;
+}
+
+.style-control-pattern-swatch {
+  display: inline-flex;
+  flex: none;
+}
+
+.style-control-pattern-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SF Mono", "Monaco", "Consolas", monospace;
+}
+
+.style-control-pattern-badge {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #e0e6ed;
+  font-size: 9px;
+  font-weight: 600;
+}
+
 /* Custom scrollbar */
 .layer-control-panel::-webkit-scrollbar {
   width: 6px;
