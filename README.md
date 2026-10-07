@@ -283,6 +283,8 @@ The layer control displays visual symbols (colored icons) next to each layer nam
 
 The symbol color is automatically extracted from the layer's paint properties (e.g., `fill-color`, `line-color`, `circle-color`). If a color cannot be determined, a neutral gray is used.
 
+Line previews reflect `line-dasharray`, scaled to fit the swatch. Circle previews use `circle-stroke-color` for the border; setting `circle-stroke-width` to `0` removes the border.
+
 To disable layer symbols:
 
 ```typescript

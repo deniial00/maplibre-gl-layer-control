@@ -29,6 +29,8 @@ import { formatNumericValue, clamp } from "../utils/formatters";
 import {
   getLayerColor,
   getLayerColorFromSpec,
+  getLayerSymbolStyle,
+  getLayerSymbolStyleFromSpec,
   createLayerSymbolSVG,
   createBackgroundGroupSymbolSVG,
 } from "../utils/symbolUtils";
@@ -1780,7 +1782,8 @@ export class LayerControl implements IControl {
 
     const layerType = layer.type;
     const color = getLayerColor(this.map, layerId, layerType);
-    const svgMarkup = createLayerSymbolSVG(layerType, color);
+    const symbolStyle = getLayerSymbolStyle(this.map, layerId, layerType);
+    const svgMarkup = createLayerSymbolSVG(layerType, color, symbolStyle);
 
     const symbolContainer = document.createElement("span");
     symbolContainer.className = "layer-control-symbol";
@@ -1797,7 +1800,11 @@ export class LayerControl implements IControl {
    */
   private createBackgroundLayerSymbol(layer: LayerSpecification): HTMLElement {
     const color = getLayerColorFromSpec(layer);
-    const svgMarkup = createLayerSymbolSVG(layer.type, color, { size: 14 });
+    const symbolStyle = getLayerSymbolStyleFromSpec(layer);
+    const svgMarkup = createLayerSymbolSVG(layer.type, color, {
+      size: 14,
+      ...symbolStyle,
+    });
 
     const symbolContainer = document.createElement("span");
     symbolContainer.className = "background-legend-layer-symbol";

@@ -126,6 +126,112 @@ export function getLayerColorFromSpec(layer: LayerSpecification): string | null 
 }
 
 /**
+ * Additional paint properties that affect a layer's preview symbol.
+ */
+export interface LayerSymbolStyle {
+  /** line-dasharray in line-width units. */
+  dasharray?: number[];
+  /** Circle border colour; null disables the border. */
+  strokeColor?: string | null;
+}
+
+function extractDasharray(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+
+  if (
+    value.length > 0 &&
+    value.every((item) => typeof item === 'number' && Number.isFinite(item))
+  ) {
+    const dasharray = value as number[];
+    if (dasharray.every((item) => item >= 0) && dasharray.some((item) => item > 0)) {
+      return dasharray;
+    }
+    return null;
+  }
+
+  for (const item of value) {
+    if (Array.isArray(item)) {
+      const dasharray = extractDasharray(item);
+      if (dasharray) return dasharray;
+    }
+  }
+
+  return null;
+}
+
+function resolveSymbolStyle(
+  layerType: string,
+  getPaint: (property: string) => unknown
+): LayerSymbolStyle {
+  if (layerType === 'line') {
+    const dasharray = extractDasharray(getPaint('line-dasharray'));
+    return dasharray ? { dasharray } : {};
+  }
+
+  if (layerType === 'circle') {
+    if (getPaint('circle-stroke-width') === 0) {
+      return { strokeColor: null };
+    }
+
+    const color = getPaint('circle-stroke-color');
+    if (typeof color === 'string') {
+      return { strokeColor: normalizeColor(color) };
+    }
+    if (Array.isArray(color)) {
+      const strokeColor = extractColorFromExpression(color);
+      return strokeColor ? { strokeColor } : {};
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Get additional symbol styles from runtime paint properties, falling back to
+ * the layer definition when a runtime property is unavailable.
+ */
+export function getLayerSymbolStyle(
+  map: MapLibreMap,
+  layerId: string,
+  layerType: string
+): LayerSymbolStyle {
+  const getPaint = (property: string): unknown => {
+    let value: unknown;
+    try {
+      value = map.getPaintProperty(layerId, property);
+    } catch {
+      // Fall back to the style definition when the runtime property is absent.
+    }
+    if (value !== undefined && value !== null) return value;
+
+    const layer = map.getStyle()?.layers?.find((item) => item.id === layerId);
+    if (layer && 'paint' in layer && layer.paint) {
+      return (layer.paint as Record<string, unknown>)[property];
+    }
+    return undefined;
+  };
+
+  return resolveSymbolStyle(layerType, getPaint);
+}
+
+/**
+ * Get additional symbol styles directly from a layer specification.
+ */
+export function getLayerSymbolStyleFromSpec(
+  layer: LayerSpecification
+): LayerSymbolStyle {
+  const getPaint = (property: string): unknown => {
+    if ('paint' in layer && layer.paint) {
+      return (layer.paint as Record<string, unknown>)[property];
+    }
+    return undefined;
+  };
+
+  return resolveSymbolStyle(layer.type, getPaint);
+}
+
+
+/**
  * Darken a hex color by a given amount
  * @param hexColor The hex color to darken (e.g., '#ff0000')
  * @param amount Amount to darken (0-1, where 1 is fully black)
@@ -173,27 +279,52 @@ function createFillSymbol(size: number, color: string): string {
 function createLineSymbol(
   size: number,
   color: string,
-  strokeWidth: number = 2
+  strokeWidth: number = 2,
+  dasharray?: number[]
 ): string {
   const y = size / 2;
   const padding = 2;
+  let dashAttributes = 'stroke-linecap="round"';
+  if (dasharray && dasharray.length > 0) {
+    const lineLength = size - padding * 2;
+    const dashLength = dasharray[0];
+    const gapLength = dasharray.length > 1 ? dasharray[1] : dashLength;
+    const fitLength = dashLength + gapLength + dashLength;
+    const scale =
+      fitLength > 0
+        ? Math.min(strokeWidth, lineLength / fitLength)
+        : strokeWidth;
+    const scaledDasharray = dasharray
+      .map((value) => Number((value * scale).toFixed(2)))
+      .join(' ');
+    dashAttributes = `stroke-linecap="butt" stroke-dasharray="${scaledDasharray}"`;
+  }
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
     <line x1="${padding}" y1="${y}" x2="${size - padding}" y2="${y}"
-          stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round"/>
+          stroke="${color}" stroke-width="${strokeWidth}" ${dashAttributes}/>
   </svg>`;
 }
 
 /**
  * Create a circle symbol (filled circle)
  */
-function createCircleSymbol(size: number, color: string): string {
+function createCircleSymbol(
+  size: number,
+  color: string,
+  strokeColor?: string | null
+): string {
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2 - 3;
-  const borderColor = darkenColor(color, 0.3);
+  const borderAttributes =
+    strokeColor === undefined
+      ? `stroke="${darkenColor(color, 0.3)}" stroke-width="1"`
+      : strokeColor === null
+        ? 'stroke="none"'
+        : `stroke="${strokeColor}" stroke-width="1"`;
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"
-            stroke="${borderColor}" stroke-width="1"/>
+            ${borderAttributes}/>
   </svg>`;
 }
 
@@ -391,6 +522,10 @@ export interface SymbolOptions {
   size?: number;
   /** Stroke width for line symbols (default: 2) */
   strokeWidth?: number;
+  /** line-dasharray in line-width units; rendered to fit the line swatch. */
+  dasharray?: number[];
+  /** Circle border colour; null disables the border. */
+  strokeColor?: string | null;
 }
 
 /**
@@ -413,9 +548,9 @@ export function createLayerSymbolSVG(
     case 'fill':
       return createFillSymbol(size, fillColor);
     case 'line':
-      return createLineSymbol(size, fillColor, strokeWidth);
+      return createLineSymbol(size, fillColor, strokeWidth, options.dasharray);
     case 'circle':
-      return createCircleSymbol(size, fillColor);
+      return createCircleSymbol(size, fillColor, options.strokeColor);
     case 'symbol':
       return createMarkerSymbol(size, fillColor);
     case 'raster':
