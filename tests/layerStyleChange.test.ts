@@ -121,6 +121,30 @@ describe("onLayerStyleChange callback", () => {
     );
   });
 
+  it("does not throw or notify when no callback is provided", () => {
+    const { internals } = makeControl();
+
+    internals.state.activeStyleEditor = "layer-1";
+    const container = document.createElement("div");
+    internals.createSliderControl(
+      container,
+      "layer-1",
+      "raster-opacity",
+      "Opacity",
+      1,
+      0,
+      1,
+      0.05,
+    );
+
+    const slider = container.querySelector(
+      ".style-control-slider",
+    ) as HTMLInputElement;
+    slider.value = "0.5";
+    expect(() =>
+      slider.dispatchEvent(new Event("input", { bubbles: true })),
+    ).not.toThrow();
+  });
 });
 
 describe("refreshStyleEditor", () => {
@@ -184,6 +208,10 @@ describe("refreshStyleEditor", () => {
     expect(display.value).toBe("#663399");
   });
 
+  it("is a no-op when the editor is not open", () => {
+    const { control } = makeControl();
+    expect(() => control.refreshStyleEditor("missing")).not.toThrow();
+  });
 });
 
 describe("color control initialization", () => {
