@@ -26,8 +26,10 @@ export { formatNumericValue, clamp } from './lib/utils/formatters';
 export {
   getLayerColor,
   getLayerColorFromSpec,
+  getLayerSymbolStyle,
+  getLayerSymbolStyleFromSpec,
   createLayerSymbolSVG,
   createBackgroundGroupSymbolSVG,
   darkenColor,
 } from './lib/utils/symbolUtils';
-export type { SymbolOptions } from './lib/utils/symbolUtils';
+export type { SymbolOptions, LayerSymbolStyle } from './lib/utils/symbolUtils';
