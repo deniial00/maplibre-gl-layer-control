@@ -161,7 +161,7 @@ export interface LayerControlOptions {
   layerStates?: PartialLayerStates;
   /** Array of layer IDs to control (if not specified, controls all layers) */
   layers?: string[];
-  /** Initial panel width in pixels (default: 320) */
+  /** Initial panel width in pixels (default: 350) */
   panelWidth?: number;
   /** Minimum panel width in pixels (default: 240) */
   panelMinWidth?: number;
