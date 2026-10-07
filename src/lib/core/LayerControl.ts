@@ -452,10 +452,10 @@ export class LayerControl implements IControl {
         const layer = this.map.getLayer(layerId);
         if (!layer) return;
 
-        const visibility = this.map.getLayoutProperty(layerId, "visibility");
-        const isVisible = visibility !== "none";
-        const layerType = layer.type;
-        const opacity = getLayerOpacity(this.map, layerId, layerType);
+        const { visible: isVisible, opacity } = this.readLayerRowState(
+          layerId,
+          layer.type,
+        );
         const friendlyName = this.generateFriendlyName(layerId);
 
         this.state.layerStates[layerId] = this.mergeWithUserState(layerId, {
@@ -497,12 +497,10 @@ export class LayerControl implements IControl {
         const layer = this.map.getLayer(layerId);
         if (!layer) return;
 
-        const visibility = this.map.getLayoutProperty(layerId, "visibility");
-        const isVisible = visibility !== "none";
-        const layerType = layer.type;
-        const opacity =
-          this.customLayerRegistry?.getLayerState(layerId)?.opacity ??
-          getLayerOpacity(this.map, layerId, layerType);
+        const { visible: isVisible, opacity } = this.readLayerRowState(
+          layerId,
+          layer.type,
+        );
         const friendlyName = this.generateFriendlyName(layerId);
 
         this.state.layerStates[layerId] = this.mergeWithUserState(layerId, {
@@ -4430,6 +4428,13 @@ export class LayerControl implements IControl {
     layerId: string,
     spec: Exclude<StylePropertySpec, { kind: "pattern" }>,
   ): { value: string | number } | { expressionOf: string } {
+    if (
+      spec.kind === "slider" &&
+      this.getAdapterOwnedOpacityProperty(layerId) === spec.property
+    ) {
+      // The adapter owns this layer's opacity; the map paint is folded.
+      return { value: this.getStyleValue(layerId, spec.property as keyof AllPaintProperties) as number };
+    }
     const raw = this.map.getPaintProperty(
       layerId,
       spec.property as keyof AllPaintProperties,
@@ -4721,6 +4726,27 @@ export class LayerControl implements IControl {
   }
 
   /**
+   * Read the visibility and opacity a layer's panel row should show. A native
+   * layer an adapter manages reports its own values; the map's paint and layout
+   * hold those combined with the adapter's folder settings, so reading them
+   * back would corrupt the row.
+   * @param layerId The layer ID
+   * @param layerType The layer's map type
+   */
+  private readLayerRowState(
+    layerId: string,
+    layerType: string,
+  ): { visible: boolean; opacity: number } {
+    const adapterState = this.customLayerRegistry?.getLayerState(layerId);
+    const visibility = this.map.getLayoutProperty(layerId, "visibility");
+    return {
+      visible: adapterState?.visible ?? visibility !== "none",
+      opacity:
+        adapterState?.opacity ?? getLayerOpacity(this.map, layerId, layerType),
+    };
+  }
+
+  /**
    * Update layer states from map (sync UI with map)
    */
   private updateLayerStatesFromMap(): void {
@@ -4743,15 +4769,10 @@ export class LayerControl implements IControl {
         const layer = this.map.getLayer(layerId);
         if (!layer) return;
 
-        // A layer an adapter manages reports its own visibility and opacity;
-        // the map's paint holds those combined with the adapter's folder
-        // settings, so reading it back would corrupt the row.
-        const adapterState = this.customLayerRegistry?.getLayerState(layerId);
-        const visibility = this.map.getLayoutProperty(layerId, "visibility");
-        const isVisible = adapterState?.visible ?? visibility !== "none";
-        const opacity =
-          adapterState?.opacity ??
-          getLayerOpacity(this.map, layerId, layer.type);
+        const { visible: isVisible, opacity } = this.readLayerRowState(
+          layerId,
+          layer.type,
+        );
 
         // Update local state
         if (this.state.layerStates[layerId]) {
@@ -4949,13 +4970,10 @@ export class LayerControl implements IControl {
           const layer = this.map.getLayer(layerId);
           if (!layer) return;
 
-          // Get layer type and opacity
-          const layerType = layer.type;
-          const adapterState = this.customLayerRegistry?.getLayerState(layerId);
-          const opacity =
-            adapterState?.opacity ?? getLayerOpacity(this.map, layerId, layerType);
-          const visibility = this.map.getLayoutProperty(layerId, "visibility");
-          const isVisible = adapterState?.visible ?? visibility !== "none";
+          const { visible: isVisible, opacity } = this.readLayerRowState(
+            layerId,
+            layer.type,
+          );
 
           // Add to state
           this.state.layerStates[layerId] = {

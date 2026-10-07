@@ -11,6 +11,7 @@ type TestableLayerControl = {
   buildLayerItems(): void;
   updateLayerStatesFromMap(): void;
   addFillControls(container: HTMLElement, layerId: string): void;
+  syncStyleEditorControlsFromMap(editor: HTMLElement): void;
 };
 
 /**
@@ -18,7 +19,11 @@ type TestableLayerControl = {
  * folder. Like the full demo's adapter, it keeps the layer's own opacity and
  * writes `own × folder` to the map's paint property.
  */
-function makeControl(own: number, folder: number) {
+function makeControl(
+  own: number,
+  folder: number,
+  options: { showAllStyleProperties?: boolean; mapHidden?: boolean } = {},
+) {
   const paint = new Map<string, number>();
   const layer: LayerState = { visible: true, opacity: own, name: "Child" };
   const folderState = { opacity: folder };
@@ -49,7 +54,7 @@ function makeControl(own: number, folder: number) {
   const mockMap = {
     getStyle: () => ({ layers: [{ id: "child", type: "fill" }] }),
     getLayer: () => ({ id: "child", type: "fill" }),
-    getLayoutProperty: () => undefined,
+    getLayoutProperty: () => (options.mapHidden ? "none" : undefined),
     getPaintProperty: (_id: string, prop: string) => paint.get(prop),
     setPaintProperty: (_id: string, prop: string, value: number) => {
       paint.set(prop, value);
@@ -60,6 +65,7 @@ function makeControl(own: number, folder: number) {
     excludeDrawnLayers: false,
     showLayerSymbol: false,
     showStyleEditor: false,
+    showAllStyleProperties: options.showAllStyleProperties,
     layers: ["child"],
     customLayerAdapters: [adapter],
   });
@@ -117,5 +123,30 @@ describe("adapter-managed native layers inside a folder", () => {
     internals.updateLayerStatesFromMap();
     expect(slider().value).toBe("0.8");
     expect(internals.state.layerStates.child.opacity).toBe(0.8);
+  });
+
+  it("keeps managed editor sliders at the layer's own opacity on refresh", () => {
+    const { internals, adapter } = makeControl(0.5, 1, {
+      showAllStyleProperties: true,
+    });
+    const container = document.createElement("div");
+    internals.addFillControls(container, "child");
+    const editorSlider = container.querySelector<HTMLInputElement>(
+      '.style-control-slider[data-property="fill-opacity"]',
+    )!;
+
+    adapter.setGroupOpacity!("folder", 0.5);
+    internals.syncStyleEditorControlsFromMap(container);
+    expect(editorSlider.value).toBe("0.5");
+  });
+
+  it("keeps the row checked when only the folder hides the layer on the map", () => {
+    const { internals } = makeControl(0.5, 1, { mapHidden: true });
+    internals.updateLayerStatesFromMap();
+    const checkbox = internals.panel.querySelector<HTMLInputElement>(
+      ".layer-control-item .layer-control-checkbox",
+    )!;
+    expect(internals.state.layerStates.child.visible).toBe(true);
+    expect(checkbox.checked).toBe(true);
   });
 });
