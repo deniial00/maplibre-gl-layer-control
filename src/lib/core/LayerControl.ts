@@ -28,6 +28,13 @@ import {
 import { normalizeColor } from "../utils/colorUtils";
 import { formatNumericValue, clamp } from "../utils/formatters";
 import {
+  STYLE_PROPERTY_SPECS,
+  STYLE_PROPERTY_SPEC_BY_PROPERTY,
+  isUnsetValue,
+  type EditableLayerType,
+  type StylePropertySpec,
+} from "../utils/styleProperties";
+import {
   getLayerColor,
   getLayerColorCategories,
   getLayerColorFromSpec,
@@ -69,6 +76,7 @@ export class LayerControl implements IControl {
   /** Explicit max panel height; null means fill available vertical space */
   private maxPanelHeight: number | null;
   private showStyleEditor: boolean;
+  private showAllStyleProperties: boolean;
   private showOpacitySlider: boolean;
   private showLayerSymbol: boolean;
   private excludeDrawnLayers: boolean;
@@ -132,6 +140,7 @@ export class LayerControl implements IControl {
     // updatePanelPosition) instead of being capped at a fixed height.
     this.maxPanelHeight = options.panelMaxHeight ?? null;
     this.showStyleEditor = options.showStyleEditor !== false;
+    this.showAllStyleProperties = options.showAllStyleProperties === true;
     this.showOpacitySlider = options.showOpacitySlider !== false;
     this.showLayerSymbol = options.showLayerSymbol !== false;
     this.excludeDrawnLayers = options.excludeDrawnLayers !== false;
@@ -3233,6 +3242,9 @@ export class LayerControl implements IControl {
       for (const nativeId of nativeLayerIds) {
         restoreOriginalStyle(this.map, nativeId, this.state.originalStyles);
       }
+      if (this.showAllStyleProperties) {
+        this.clearUserAddedProperties(editor);
+      }
       // Mirror the restored values to the host before the editor is rebuilt
       // (closeStyleEditor clears the active editor and group mappings).
       if (this.onLayerStyleChange) {
@@ -3441,6 +3453,10 @@ export class LayerControl implements IControl {
    * Add controls for fill layers
    */
   private addFillControls(container: HTMLElement, layerId: string): void {
+    if (this.showAllStyleProperties) {
+      this.addAllStyleControls(container, layerId, "fill");
+      return;
+    }
     // Fill Color - try layer definition first, then runtime property
     const style = this.map.getStyle();
     const layer = style.layers?.find((l) => l.id === layerId);
@@ -3472,20 +3488,7 @@ export class LayerControl implements IControl {
       );
     }
 
-    const patternGroup = document.createElement("div");
-    patternGroup.className = "style-control-group style-control-pattern-group";
-    patternGroup.dataset.property = "fill-pattern";
-    patternGroup.dataset.layerId = layerId;
-    container.appendChild(patternGroup);
-    this.renderFillPatternPicker(patternGroup, layerId);
-
-    container
-      .querySelector<HTMLInputElement>(
-        '.style-control-color-picker[data-property="fill-color"]',
-      )
-      ?.addEventListener("change", () =>
-        this.renderFillPatternPicker(patternGroup, layerId),
-      );
+    this.addFillPatternGroup(container, layerId);
 
     // Fill Opacity
     const fillOpacity = this.map.getPaintProperty(layerId, "fill-opacity");
@@ -3518,6 +3521,66 @@ export class LayerControl implements IControl {
           normalizedOutlineColor,
         );
       }
+    }
+  }
+
+  /** Fill pattern picker group, with the Fill Color re-render hook. */
+  private addFillPatternGroup(container: HTMLElement, layerId: string): void {
+    const patternGroup = document.createElement("div");
+    patternGroup.className = "style-control-group style-control-pattern-group";
+    patternGroup.dataset.property = "fill-pattern";
+    patternGroup.dataset.layerId = layerId;
+    container.appendChild(patternGroup);
+    this.renderFillPatternPicker(patternGroup, layerId);
+
+    container
+      .querySelector<HTMLInputElement>(
+        '.style-control-color-picker[data-property="fill-color"]',
+      )
+      ?.addEventListener("change", () =>
+        this.renderFillPatternPicker(patternGroup, layerId),
+      );
+  }
+
+  /**
+   * `showAllStyleProperties`: add every control the editor supports for a
+   * layer type. Controls are created from the style-spec default and then
+   * refreshed from the map, so unset properties show their effective value
+   * without anything being written to the style.
+   */
+  private addAllStyleControls(
+    container: HTMLElement,
+    layerId: string,
+    layerType: EditableLayerType,
+  ): void {
+    for (const spec of STYLE_PROPERTY_SPECS[layerType]) {
+      if (spec.kind === "pattern") {
+        this.addFillPatternGroup(container, layerId);
+        continue;
+      }
+      const property = spec.property as keyof AllPaintProperties;
+      const group =
+        spec.kind === "color"
+          ? this.createColorControl(
+              container,
+              layerId,
+              property,
+              spec.label,
+              spec.defaultValue,
+              true,
+            )
+          : this.createSliderControl(
+              container,
+              layerId,
+              property,
+              spec.label,
+              spec.defaultValue,
+              spec.min,
+              spec.max,
+              spec.step,
+              true,
+            );
+      this.refreshManagedControl(group);
     }
   }
 
@@ -3560,14 +3623,15 @@ export class LayerControl implements IControl {
     const fillColorPicker = group.parentElement?.querySelector<HTMLInputElement>(
       '.style-control-color-picker[data-property="fill-color"]',
     );
-    if (fillColorPicker) {
-      fillColorPicker.disabled = nonSdfPatternSelected;
-      const colorValue =
-        fillColorPicker.parentElement?.querySelector<HTMLInputElement>(
-          ".style-control-color-value",
-        );
-      if (colorValue) colorValue.disabled = nonSdfPatternSelected;
+    const fillColorGroup = fillColorPicker?.closest<HTMLElement>(
+      ".style-control-group",
+    );
+    if (fillColorGroup) {
+      fillColorGroup.dataset.patternDisabled = String(nonSdfPatternSelected);
+      this.syncControlDisabled(fillColorGroup);
     }
+    // Outline color is unavailable while any fill pattern is set.
+    this.refreshManagedControls(group.parentElement);
 
     const label = document.createElement("label");
     label.className = "style-control-label";
@@ -3696,6 +3760,10 @@ export class LayerControl implements IControl {
    * Add controls for line layers
    */
   private addLineControls(container: HTMLElement, layerId: string): void {
+    if (this.showAllStyleProperties) {
+      this.addAllStyleControls(container, layerId, "line");
+      return;
+    }
     // Line Color - try layer definition first, then runtime property
     const style = this.map.getStyle();
     const layer = style.layers?.find((l) => l.id === layerId);
@@ -3775,6 +3843,10 @@ export class LayerControl implements IControl {
    * Add controls for circle layers
    */
   private addCircleControls(container: HTMLElement, layerId: string): void {
+    if (this.showAllStyleProperties) {
+      this.addAllStyleControls(container, layerId, "circle");
+      return;
+    }
     // Circle Color - try layer definition first, then runtime property
     const style = this.map.getStyle();
     const layer = style.layers?.find((l) => l.id === layerId);
@@ -3875,6 +3947,10 @@ export class LayerControl implements IControl {
    * Add controls for raster layers
    */
   private addRasterControls(container: HTMLElement, layerId: string): void {
+    if (this.showAllStyleProperties) {
+      this.addAllStyleControls(container, layerId, "raster");
+      return;
+    }
     // Raster Opacity
     const rasterOpacity = this.map.getPaintProperty(layerId, "raster-opacity");
     this.createSliderControl(
@@ -3964,6 +4040,10 @@ export class LayerControl implements IControl {
    * Add controls for symbol layers
    */
   private addSymbolControls(container: HTMLElement, layerId: string): void {
+    if (this.showAllStyleProperties) {
+      this.addAllStyleControls(container, layerId, "symbol");
+      return;
+    }
     // Text Color
     const textColor = this.map.getPaintProperty(layerId, "text-color");
     if (textColor !== undefined) {
@@ -4091,6 +4171,7 @@ export class LayerControl implements IControl {
         if (hexDisplay) hexDisplay.value = hexColor;
       }
     });
+    this.refreshManagedControls(editor);
     editor
       .querySelectorAll<HTMLElement>(".style-control-pattern-group")
       .forEach((group) => {
@@ -4109,9 +4190,11 @@ export class LayerControl implements IControl {
     property: keyof AllPaintProperties,
     label: string,
     initialValue: string,
-  ): void {
+    managed = false,
+  ): HTMLElement {
     const controlGroup = document.createElement("div");
     controlGroup.className = "style-control-group";
+    if (managed) controlGroup.dataset.managed = "true";
 
     const labelEl = document.createElement("label");
     labelEl.className = "style-control-label";
@@ -4144,6 +4227,7 @@ export class LayerControl implements IControl {
         this.map.setPaintProperty(id, property, color);
       }
       this.notifyLayerStyleChange(property, color);
+      if (managed) this.refreshManagedControls(controlGroup.parentElement, property);
     });
 
     inputWrapper.appendChild(colorInput);
@@ -4153,6 +4237,7 @@ export class LayerControl implements IControl {
     controlGroup.appendChild(inputWrapper);
 
     container.appendChild(controlGroup);
+    return controlGroup;
   }
 
   /**
@@ -4167,9 +4252,11 @@ export class LayerControl implements IControl {
     min: number,
     max: number,
     step: number,
-  ): void {
+    managed = false,
+  ): HTMLElement {
     const controlGroup = document.createElement("div");
     controlGroup.className = "style-control-group";
+    if (managed) controlGroup.dataset.managed = "true";
 
     const labelEl = document.createElement("label");
     labelEl.className = "style-control-label";
@@ -4212,6 +4299,224 @@ export class LayerControl implements IControl {
     controlGroup.appendChild(inputWrapper);
 
     container.appendChild(controlGroup);
+    return controlGroup;
+  }
+
+  /**
+   * Read the effective value a managed (`showAllStyleProperties`) control
+   * should display: the layer's own value, else the inherited value, else the
+   * style-spec default. Returns `expressionOf` (the property whose value is
+   * not editable) when that value is an expression or otherwise not a plain
+   * number/color.
+   */
+  private resolveEffectiveValue(
+    layerId: string,
+    spec: Exclude<StylePropertySpec, { kind: "pattern" }>,
+  ): { value: string | number } | { expressionOf: string } {
+    const raw = this.map.getPaintProperty(
+      layerId,
+      spec.property as keyof AllPaintProperties,
+    );
+    if (isUnsetValue(raw)) {
+      const parent =
+        spec.kind === "color" && spec.inheritsFrom
+          ? STYLE_PROPERTY_SPEC_BY_PROPERTY[spec.inheritsFrom]
+          : undefined;
+      if (parent && parent.kind !== "pattern") {
+        return this.resolveEffectiveValue(layerId, parent);
+      }
+      return { value: spec.defaultValue };
+    }
+    const value =
+      spec.kind === "slider"
+        ? typeof raw === "number"
+          ? raw
+          : null
+        : normalizeColor(raw);
+    return value === null ? { expressionOf: spec.property } : { value };
+  }
+
+  /**
+   * Explain why a managed control cannot take effect on any of the layers it
+   * edits (style-spec `requires` dependencies), or null when it can. With
+   * grouped native sublayers the control stays enabled while at least one
+   * layer in the group can still use the edit.
+   */
+  private getDependencyReason(
+    targetIds: string[],
+    property: string,
+  ): string | null {
+    const paint = (id: string, prop: string) =>
+      this.map.getPaintProperty(id, prop as keyof AllPaintProperties);
+    const layout = (id: string, prop: string) =>
+      this.map.getLayoutProperty(id, prop as never);
+    switch (property) {
+      case "fill-outline-color":
+        if (targetIds.every((id) => paint(id, "fill-antialias") === false)) {
+          return "Outline color requires fill antialiasing, which is turned off for this layer.";
+        }
+        if (targetIds.every((id) => !isUnsetValue(paint(id, "fill-pattern")))) {
+          return "Outline color has no effect while a fill pattern is set.";
+        }
+        return null;
+      case "line-color":
+        return targetIds.every((id) => !isUnsetValue(paint(id, "line-pattern")))
+          ? "Line color has no effect while a line pattern is set."
+          : null;
+      case "text-color":
+      case "text-opacity":
+        return targetIds.every((id) => isUnsetValue(layout(id, "text-field")))
+          ? "Requires a text-field; this layer has no text to style."
+          : null;
+      case "icon-opacity":
+        return targetIds.every((id) => isUnsetValue(layout(id, "icon-image")))
+          ? "Requires an icon-image; this layer has no icon to style."
+          : null;
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Re-evaluate every managed control under `root` from the current map
+   * state (see {@link refreshManagedControl}). `inheritsFrom` limits the pass
+   * to controls whose unset value follows that property.
+   */
+  private refreshManagedControls(
+    root: ParentNode | null | undefined,
+    inheritsFrom?: string,
+  ): void {
+    root
+      ?.querySelectorAll<HTMLElement>('.style-control-group[data-managed="true"]')
+      .forEach((group) => this.refreshManagedControl(group, inheritsFrom));
+  }
+
+  /**
+   * Update a managed control's displayed value and its enabled/disabled state
+   * with explanation from the current map state. Reads only; never writes to
+   * the map.
+   */
+  private refreshManagedControl(
+    group: HTMLElement,
+    inheritsFrom?: string,
+  ): void {
+    const input = group.querySelector<HTMLInputElement>("[data-property]");
+    const property = input?.dataset.property;
+    const sourceId = input?.dataset.layerId;
+    const spec = property ? STYLE_PROPERTY_SPEC_BY_PROPERTY[property] : undefined;
+    if (!input || !sourceId || !spec || spec.kind === "pattern") return;
+    if (
+      inheritsFrom &&
+      !(spec.kind === "color" && spec.inheritsFrom === inheritsFrom)
+    ) {
+      return;
+    }
+
+    const targetIds = this.nativeLayerGroups.get(sourceId) || [sourceId];
+    const effective = this.resolveEffectiveValue(sourceId, spec);
+    const expressionOf =
+      "expressionOf" in effective
+        ? effective.expressionOf
+        : targetIds
+            .map((id) => this.resolveEffectiveValue(id, spec))
+            .find((entry) => "expressionOf" in entry)?.expressionOf;
+
+    let reason = this.getDependencyReason(targetIds, spec.property);
+    if (!reason && expressionOf) {
+      const owner = STYLE_PROPERTY_SPEC_BY_PROPERTY[expressionOf];
+      const ownerLabel =
+        owner && owner.kind !== "pattern" ? owner.label : expressionOf;
+      reason =
+        expressionOf === spec.property
+          ? `${spec.label} uses a data-driven expression, which the editor cannot edit. The value shown is a placeholder.`
+          : `Inherits ${ownerLabel}, which uses a data-driven expression the editor cannot edit. The value shown is a placeholder.`;
+    }
+
+    // Leave a control the user is dragging alone, as refreshStyleEditor does.
+    if ("value" in effective && input !== document.activeElement) {
+      input.value = String(effective.value);
+      if (spec.kind === "slider") {
+        const display = group.querySelector(".style-control-value");
+        if (display) {
+          display.textContent = formatNumericValue(
+            Number(effective.value),
+            spec.step,
+          );
+        }
+      } else {
+        const hex = group.querySelector<HTMLInputElement>(
+          ".style-control-color-value",
+        );
+        if (hex) hex.value = String(effective.value);
+      }
+    }
+
+    this.setControlUnavailableReason(group, reason);
+  }
+
+  /** Show or clear the explanation for a disabled managed control. */
+  private setControlUnavailableReason(
+    group: HTMLElement,
+    reason: string | null,
+  ): void {
+    let reasonEl = group.querySelector<HTMLElement>(".style-control-reason");
+    if (reason) {
+      group.dataset.unavailableReason = reason;
+      group.title = reason;
+      if (!reasonEl) {
+        reasonEl = document.createElement("div");
+        reasonEl.className = "style-control-reason";
+        group.appendChild(reasonEl);
+      }
+      reasonEl.textContent = reason;
+    } else {
+      delete group.dataset.unavailableReason;
+      group.removeAttribute("title");
+      reasonEl?.remove();
+    }
+    group.classList.toggle("style-control-group-disabled", reason !== null);
+    this.syncControlDisabled(group);
+  }
+
+  /**
+   * A control's inputs are disabled while it is unavailable (dependency or
+   * expression) or while a non-SDF fill pattern owns its color.
+   */
+  private syncControlDisabled(group: HTMLElement): void {
+    const disabled =
+      group.dataset.unavailableReason !== undefined ||
+      group.dataset.patternDisabled === "true";
+    group.querySelectorAll<HTMLInputElement>("input").forEach((input) => {
+      input.disabled = disabled;
+    });
+  }
+
+  /**
+   * Unset properties that a managed control added on top of the layer's
+   * original style, so Reset Style returns the layer to what it was before the
+   * user edited a control the original style never set.
+   */
+  private clearUserAddedProperties(editor: HTMLElement): void {
+    editor
+      .querySelectorAll<HTMLElement>(
+        '.style-control-group[data-managed="true"] [data-property]',
+      )
+      .forEach((control) => {
+        const property = control.dataset.property as
+          | keyof AllPaintProperties
+          | undefined;
+        const sourceId = control.dataset.layerId;
+        if (!property || !sourceId) return;
+        let cleared = false;
+        for (const id of this.nativeLayerGroups.get(sourceId) || [sourceId]) {
+          const original = this.state.originalStyles.get(id);
+          if (!original || property in original.paint) continue;
+          if (this.map.getPaintProperty(id, property) === undefined) continue;
+          this.map.setPaintProperty(id, property, undefined);
+          cleared = true;
+        }
+        if (cleared) this.notifyLayerStyleChange(property, undefined);
+      });
   }
 
   /**
@@ -4226,6 +4531,9 @@ export class LayerControl implements IControl {
 
     // Update UI controls to reflect the reset values
     const editor = this.styleEditors.get(layerId);
+    if (editor && this.showAllStyleProperties) {
+      this.clearUserAddedProperties(editor);
+    }
     if (editor) {
       // Update all slider controls
       const sliders = editor.querySelectorAll(
@@ -4283,7 +4591,7 @@ export class LayerControl implements IControl {
             this.map.getPaintProperty(sourceId, "fill-pattern"),
           );
         });
-
+      this.refreshManagedControls(editor);
     }
   }
 

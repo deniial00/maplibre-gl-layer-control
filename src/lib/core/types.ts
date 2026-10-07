@@ -169,6 +169,24 @@ export interface LayerControlOptions {
   panelMaxWidth?: number;
   /** Whether to show the style editor button (gear icon) for layers (default: true) */
   showStyleEditor?: boolean;
+  /**
+   * Whether the style editor shows every property control it supports for a
+   * layer's type, even when the property is absent from the layer style
+   * (default: false). When false, controls for optional properties (e.g.
+   * `fill-opacity`, `fill-outline-color`) only appear once the layer sets them.
+   *
+   * Unset properties start at their effective value: the style-spec default,
+   * or the inherited value (`fill-outline-color` follows `fill-color`).
+   * Opening or closing the editor never writes to the map style; a property is
+   * set only when the user edits its control, and Reset Style unsets it again.
+   * A control that cannot take effect (e.g. outline color with
+   * `fill-antialias: false` or a fill pattern, text properties without a
+   * `text-field`, icon opacity without an `icon-image`) or whose value is a
+   * data-driven expression stays visible but disabled with an explanation;
+   * expressions are never replaced. Applies to ordinary layers and to native
+   * sublayers exposed by custom-layer adapters.
+   */
+  showAllStyleProperties?: boolean;
   /** Whether to show the opacity slider for layers (default: true) */
   showOpacitySlider?: boolean;
   /** Whether to show layer type symbols/icons next to layer names (default: true) */
@@ -211,7 +229,9 @@ export interface LayerControlOptions {
    * `"fill-color"`, or `"fill-pattern"`), and the new value. Pattern selection
    * reports its image ID; selecting None reports `undefined`. Reset reports
    * the restored raw value, including a string, expression, or `undefined`
-   * for `fill-pattern`. Lets consumers mirror changes into their own store so
+   * for `fill-pattern`, and `undefined` for a property that
+   * `showAllStyleProperties` exposed and the user set on a layer that did not
+   * have it. Lets consumers mirror changes into their own store so
    * external style UI stays in sync. The control still applies changes to the
    * map itself; this callback is purely a notification.
    */
