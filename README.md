@@ -283,6 +283,8 @@ The layer control displays visual symbols (colored icons) next to each layer nam
 
 The symbol color is automatically extracted from the layer's paint properties (e.g., `fill-color`, `line-color`, `circle-color`). Standard CSS color strings are supported, including names, hex, RGB(A), and HSL(A); previews use six-digit RGB and ignore alpha. For `case`, `match`, and `interpolate` expressions, only result/output literals are inspected. The public `normalizeColor()` utility returns `null` for invalid values; invalid candidates are skipped, and a neutral gray is used when no color can be determined.
 
+Line previews reflect `line-dasharray`, scaled to fit the swatch. Circle previews use `circle-stroke-color` for the border; setting `circle-stroke-width` to `0` removes the border.
+
 To disable layer symbols:
 
 ```typescript

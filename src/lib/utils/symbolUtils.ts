@@ -15,15 +15,45 @@ const COLOR_PROPERTY_MAP: Record<string, string[]> = {
 };
 
 /**
+ * Narrows an unknown expression value to an array
+ * @param value Value to check
+ * @returns Whether the value is an array
+ */
+function isExpressionArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+/**
  * Extract the first color value from a MapLibre expression
- * Handles expressions like ['case', ...], ['match', ...], ['interpolate', ...]
+ * Handles expressions like ['case', ...], ['match', ...], ['interpolate', ...],
+ * and constant ['rgb', ...] / ['rgba', ...] operators
  * @param expression The MapLibre expression to extract color from
+ * @param preserveFormat Keep CSS color syntax instead of normalizing to hex
  * @returns The first color found, or null
  */
-function extractColorFromExpression(expression: unknown[]): string | null {
-  if (expression.length === 0) return null;
+function extractColorFromExpression(
+  expression: unknown,
+  preserveFormat = false
+): string | null {
+  if (!isExpressionArray(expression) || expression.length === 0) return null;
 
   const operator = expression[0];
+  const components = expression.slice(1);
+  if (
+    (operator === 'rgb' && components.length === 3) ||
+    (operator === 'rgba' && components.length === 4)
+  ) {
+    if (
+      components.every(
+        (component) =>
+          typeof component === 'number' && Number.isFinite(component)
+      )
+    ) {
+      const color = `${operator}(${components.join(', ')})`;
+      return preserveFormat ? color : normalizeColor(color);
+    }
+  }
+
   let index = 0;
   let stride = 1;
   let end = expression.length;
@@ -41,26 +71,23 @@ function extractColorFromExpression(expression: unknown[]): string | null {
     stride = 2;
   }
 
-  for (; index < end; index += stride) {
-    const item = expression[index];
+  const resolve = (item: unknown): string | null => {
     if (typeof item === 'string') {
       const color = normalizeColor(item);
-      if (color !== null) return color;
-    } else if (Array.isArray(item)) {
-      const color = extractColorFromExpression(item);
-      if (color !== null) return color;
+      return color !== null && preserveFormat ? item : color;
     }
+    return isExpressionArray(item)
+      ? extractColorFromExpression(item, preserveFormat)
+      : null;
+  };
+
+  for (; index < end; index += stride) {
+    const color = resolve(expression[index]);
+    if (color !== null) return color;
   }
 
   if (fallbackIndex >= firstResultIndex) {
-    const fallback = expression[fallbackIndex];
-    if (typeof fallback === 'string') {
-      const color = normalizeColor(fallback);
-      if (color !== null) return color;
-    } else if (Array.isArray(fallback)) {
-      const color = extractColorFromExpression(fallback);
-      if (color !== null) return color;
-    }
+    return resolve(expression[fallbackIndex]);
   }
 
   return null;
@@ -149,6 +176,129 @@ export function getLayerColorFromSpec(layer: LayerSpecification): string | null 
 }
 
 /**
+ * Additional paint properties that affect a layer's preview symbol.
+ */
+export interface LayerSymbolStyle {
+  /** line-dasharray in line-width units. */
+  dasharray?: number[];
+  /** Circle border colour; null disables the border. */
+  strokeColor?: string | null;
+}
+
+/**
+ * Extracts the first literal dash pattern from a paint value or expression
+ * @param value Runtime or style-spec line-dasharray value
+ * @returns A valid finite dash pattern, or null
+ */
+function extractDasharray(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+
+  if (
+    value.length > 0 &&
+    value.every((item) => typeof item === 'number' && Number.isFinite(item))
+  ) {
+    const dasharray = value as number[];
+    if (dasharray.every((item) => item >= 0) && dasharray.some((item) => item > 0)) {
+      return dasharray;
+    }
+    return null;
+  }
+
+  for (const item of value) {
+    if (Array.isArray(item)) {
+      const dasharray = extractDasharray(item);
+      if (dasharray) return dasharray;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolves the preview styles supported for a layer type
+ * @param layerType MapLibre layer type
+ * @param getPaint Paint-property lookup for the current layer
+ * @returns The resolved dash pattern or circle border style
+ */
+function resolveSymbolStyle(
+  layerType: string,
+  getPaint: (property: string) => unknown
+): LayerSymbolStyle {
+  if (layerType === 'line') {
+    const dasharray = extractDasharray(getPaint('line-dasharray'));
+    return dasharray ? { dasharray } : {};
+  }
+
+  if (layerType === 'circle') {
+    if (getPaint('circle-stroke-width') === 0) {
+      return { strokeColor: null };
+    }
+
+    const color = getPaint('circle-stroke-color');
+    if (typeof color === 'string') {
+      return { strokeColor: color };
+    }
+    if (isExpressionArray(color)) {
+      const strokeColor = extractColorFromExpression(color, true);
+      return strokeColor ? { strokeColor } : {};
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Get additional symbol styles from runtime paint properties, falling back to
+ * the layer definition when a runtime property is unavailable
+ * @param map The MapLibre map instance
+ * @param layerId The layer ID
+ * @param layerType The layer type
+ * @returns The resolved dash pattern or circle border style
+ */
+export function getLayerSymbolStyle(
+  map: MapLibreMap,
+  layerId: string,
+  layerType: string
+): LayerSymbolStyle {
+  const getPaint = (property: string): unknown => {
+    let value: unknown;
+    try {
+      value = map.getPaintProperty(layerId, property);
+    } catch {
+      // Fall back to the style definition when the runtime property is absent.
+    }
+    if (value !== undefined && value !== null) return value;
+
+    const layer = map.getStyle()?.layers?.find((item) => item.id === layerId);
+    if (layer && 'paint' in layer && layer.paint) {
+      return (layer.paint as Record<string, unknown>)[property];
+    }
+    return undefined;
+  };
+
+  return resolveSymbolStyle(layerType, getPaint);
+}
+
+/**
+ * Get additional symbol styles directly from a layer specification
+ * @param layer The layer specification
+ * @returns The resolved dash pattern or circle border style
+ */
+export function getLayerSymbolStyleFromSpec(
+  layer: LayerSpecification
+): LayerSymbolStyle {
+  const getPaint = (property: string): unknown => {
+    if ('paint' in layer && layer.paint) {
+      return (layer.paint as Record<string, unknown>)[property];
+    }
+    return undefined;
+  };
+
+  return resolveSymbolStyle(layer.type, getPaint);
+}
+
+
+/**
  * Darken a hex color by a given amount
  * @param hexColor The hex color to darken (e.g., '#ff0000')
  * @param amount Amount to darken (0-1, where 1 is fully black)
@@ -192,31 +342,65 @@ function createFillSymbol(size: number, color: string): string {
 
 /**
  * Create a line symbol (horizontal line)
+ * @param size Symbol size in pixels
+ * @param color Line color
+ * @param strokeWidth Preview stroke width in pixels
+ * @param dasharray Optional line-dasharray scaled to fit the symbol
+ * @returns SVG markup string
  */
 function createLineSymbol(
   size: number,
   color: string,
-  strokeWidth: number = 2
+  strokeWidth: number = 2,
+  dasharray?: number[]
 ): string {
   const y = size / 2;
   const padding = 2;
+  let dashAttributes = 'stroke-linecap="round"';
+  if (dasharray && dasharray.length > 0) {
+    const lineLength = size - padding * 2;
+    const dashLength = dasharray[0];
+    const gapLength = dasharray.length > 1 ? dasharray[1] : dashLength;
+    const fitLength = dashLength + gapLength + dashLength;
+    const scale =
+      fitLength > 0
+        ? Math.min(strokeWidth, lineLength / fitLength)
+        : strokeWidth;
+    const scaledDasharray = dasharray
+      .map((value) => Number((value * scale).toFixed(2)))
+      .join(' ');
+    dashAttributes = `stroke-linecap="butt" stroke-dasharray="${scaledDasharray}"`;
+  }
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
     <line x1="${padding}" y1="${y}" x2="${size - padding}" y2="${y}"
-          stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round"/>
+          stroke="${color}" stroke-width="${strokeWidth}" ${dashAttributes}/>
   </svg>`;
 }
 
 /**
  * Create a circle symbol (filled circle)
+ * @param size Symbol size in pixels
+ * @param color Circle fill color
+ * @param strokeColor Border color; null disables the border, undefined uses a darkened fill
+ * @returns SVG markup string
  */
-function createCircleSymbol(size: number, color: string): string {
+function createCircleSymbol(
+  size: number,
+  color: string,
+  strokeColor?: string | null
+): string {
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2 - 3;
-  const borderColor = darkenColor(color, 0.3);
+  const borderAttributes =
+    strokeColor === undefined
+      ? `stroke="${darkenColor(color, 0.3)}" stroke-width="1"`
+      : strokeColor === null
+        ? 'stroke="none"'
+        : `stroke="${strokeColor}" stroke-width="1"`;
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"
-            stroke="${borderColor}" stroke-width="1"/>
+            ${borderAttributes}/>
   </svg>`;
 }
 
@@ -414,6 +598,10 @@ export interface SymbolOptions {
   size?: number;
   /** Stroke width for line symbols (default: 2) */
   strokeWidth?: number;
+  /** line-dasharray in line-width units; rendered to fit the line swatch. */
+  dasharray?: number[];
+  /** Circle border colour; null disables the border. */
+  strokeColor?: string | null;
 }
 
 /**
@@ -436,9 +624,9 @@ export function createLayerSymbolSVG(
     case 'fill':
       return createFillSymbol(size, fillColor);
     case 'line':
-      return createLineSymbol(size, fillColor, strokeWidth);
+      return createLineSymbol(size, fillColor, strokeWidth, options.dasharray);
     case 'circle':
-      return createCircleSymbol(size, fillColor);
+      return createCircleSymbol(size, fillColor, options.strokeColor);
     case 'symbol':
       return createMarkerSymbol(size, fillColor);
     case 'raster':
