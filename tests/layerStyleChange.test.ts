@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { LayerControl } from "../src/lib/core/LayerControl";
 
 /**
@@ -6,7 +6,10 @@ import { LayerControl } from "../src/lib/core/LayerControl";
  */
 type TestableLayerControl = {
   map: unknown;
-  state: { activeStyleEditor: string | null };
+  state: {
+    activeStyleEditor: string | null;
+    originalStyles: Map<string, { paint: Record<string, unknown> }>;
+  };
   styleEditors: Map<string, HTMLElement>;
   createSliderControl(
     container: HTMLElement,
@@ -26,6 +29,7 @@ type TestableLayerControl = {
     initialValue: string,
   ): void;
   addFillControls(container: HTMLElement, layerId: string): void;
+  resetLayerStyle(layerId: string): void;
 };
 
 /**
@@ -33,6 +37,8 @@ type TestableLayerControl = {
  */
 function makeControl(
   options: ConstructorParameters<typeof LayerControl>[0] = {},
+  images: Record<string, { sdf: boolean }> = {},
+  includeImageApi = true,
 ) {
   const paintProps = new Map<string, unknown>();
   const key = (id: string, prop: string) => `${id}::${prop}`;
@@ -44,6 +50,26 @@ function makeControl(
       paintProps.set(key(id, prop), value);
     },
     getStyle: () => ({ layers: [] }),
+    getLayer: () => ({ type: "fill" }),
+    ...(includeImageApi
+      ? {
+          listImages: () => Object.keys(images),
+          getImage: (id: string) => {
+            const image = images[id];
+            return image
+              ? {
+                  data: {
+                    width: 2,
+                    height: 2,
+                    data: new Uint8Array(16),
+                  },
+                  pixelRatio: 1,
+                  sdf: image.sdf,
+                }
+              : undefined;
+          },
+        }
+      : {}),
   };
 
   const control = new LayerControl(options);
@@ -232,5 +258,176 @@ describe("color control initialization", () => {
     expect(
       invalidContainer.querySelector(".style-control-color-picker"),
     ).toBeNull();
+  });
+});
+
+describe("fill pattern picker", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("selects loaded images, reports changes, and clears to a solid fill", () => {
+    const onLayerStyleChange = vi.fn();
+    const { internals, paintProps, key } = makeControl(
+      { onLayerStyleChange },
+      { dots: { sdf: true }, stripes: { sdf: false } },
+    );
+    internals.state.activeStyleEditor = "layer-1";
+
+    paintProps.set(key("layer-1", "fill-pattern"), "stripes");
+    paintProps.set(key("layer-1", "fill-color"), "#ff0000");
+
+    const container = document.createElement("div");
+    internals.addFillControls(container, "layer-1");
+
+    const stripes = container.querySelector<HTMLButtonElement>(
+      '.style-control-pattern-option[data-pattern-id="stripes"]',
+    );
+    expect(stripes?.getAttribute("aria-selected")).toBe("true");
+    const fillColor = container.querySelector<HTMLInputElement>(
+      '.style-control-color-picker[data-property="fill-color"]',
+    );
+    const fillColorValue = container.querySelector<HTMLInputElement>(
+      ".style-control-color-value",
+    );
+    expect(fillColor?.disabled).toBe(true);
+    expect(fillColorValue?.disabled).toBe(true);
+    expect(
+      container.querySelector(".style-control-pattern-hint")?.textContent,
+    ).toContain("Fill Color is disabled while it is selected");
+    expect(
+      container.querySelector(
+        '.style-control-pattern-option[data-pattern-id="dots"] .style-control-pattern-badge',
+      )?.textContent,
+    ).toBe("SDF");
+    expect(onLayerStyleChange).not.toHaveBeenCalled();
+
+    container
+      .querySelector<HTMLButtonElement>(
+        '.style-control-pattern-option[data-pattern-id="dots"]',
+      )
+      ?.click();
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBe("dots");
+    expect(onLayerStyleChange).toHaveBeenLastCalledWith(
+      "layer-1",
+      "fill-pattern",
+      "dots",
+    );
+    expect(
+      container.querySelector(".style-control-pattern-hint")?.textContent,
+    ).toContain("SDF pattern");
+    expect(fillColor?.disabled).toBe(false);
+    expect(fillColorValue?.disabled).toBe(false);
+
+    container
+      .querySelector<HTMLButtonElement>(
+        '.style-control-pattern-option[data-pattern-id=""]',
+      )
+      ?.click();
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBeUndefined();
+    expect(onLayerStyleChange).toHaveBeenLastCalledWith(
+      "layer-1",
+      "fill-pattern",
+      undefined,
+    );
+    expect(fillColor?.disabled).toBe(false);
+    expect(paintProps.get(key("layer-1", "fill-color"))).toBe("#ff0000");
+  });
+
+  it("preserves an expression until the user selects an option", () => {
+    const onLayerStyleChange = vi.fn();
+    const { internals, paintProps, key } = makeControl(
+      { onLayerStyleChange },
+      { dots: { sdf: true } },
+    );
+    const expression = ["match", ["get", "kind"], "a", "dots", "dots"];
+    paintProps.set(key("layer-1", "fill-pattern"), expression);
+
+    const container = document.createElement("div");
+    internals.addFillControls(container, "layer-1");
+
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBe(expression);
+    expect(
+      container.querySelector(
+        '.style-control-pattern-option[aria-selected="true"]',
+      ),
+    ).toBeNull();
+    expect(
+      container.querySelector(".style-control-pattern-current")?.textContent,
+    ).toContain("data-driven expression");
+    expect(onLayerStyleChange).not.toHaveBeenCalled();
+
+    container
+      .querySelector<HTMLButtonElement>(
+        '.style-control-pattern-option[data-pattern-id="dots"]',
+      )
+      ?.click();
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBe("dots");
+  });
+
+  it("keeps a missing image unchanged and tolerates absent image APIs", () => {
+    const onLayerStyleChange = vi.fn();
+    const { internals, paintProps, key } = makeControl(
+      { onLayerStyleChange },
+      {},
+      false,
+    );
+    internals.state.activeStyleEditor = "layer-1";
+    paintProps.set(key("layer-1", "fill-pattern"), "ghost");
+
+    const container = document.createElement("div");
+    expect(() => internals.addFillControls(container, "layer-1")).not.toThrow();
+
+    const missing = container.querySelector<HTMLButtonElement>(
+      '.style-control-pattern-option[data-pattern-id="ghost"]',
+    );
+    expect(missing?.disabled).toBe(true);
+    expect(missing?.getAttribute("aria-selected")).toBe("true");
+    expect(missing?.textContent).toContain("ghost (not loaded)");
+    expect(
+      container.querySelector(".style-control-pattern-empty")?.textContent,
+    ).toContain("No images loaded");
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBe("ghost");
+    expect(onLayerStyleChange).not.toHaveBeenCalled();
+  });
+
+  it("reset removes a pattern added to a layer that had none", () => {
+    const onLayerStyleChange = vi.fn();
+    const { internals, paintProps, key } = makeControl(
+      { onLayerStyleChange },
+      { dots: { sdf: true } },
+    );
+    internals.state.activeStyleEditor = "layer-1";
+    internals.state.originalStyles.set("layer-1", {
+      paint: { "fill-color": "#ff0000" },
+    });
+
+    const editor = document.createElement("div");
+    internals.styleEditors.set("layer-1", editor);
+    internals.addFillControls(editor, "layer-1");
+    editor
+      .querySelector<HTMLButtonElement>(
+        '.style-control-pattern-option[data-pattern-id="dots"]',
+      )
+      ?.click();
+
+    internals.resetLayerStyle("layer-1");
+
+    expect(paintProps.get(key("layer-1", "fill-pattern"))).toBeUndefined();
+    expect(
+      editor
+        .querySelector<HTMLButtonElement>(
+          '.style-control-pattern-option[data-pattern-id=""]',
+        )
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(onLayerStyleChange).toHaveBeenLastCalledWith(
+      "layer-1",
+      "fill-pattern",
+      undefined,
+    );
   });
 });

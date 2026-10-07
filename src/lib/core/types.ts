@@ -204,14 +204,16 @@ export interface LayerControlOptions {
   /** Callback when a layer is removed via context menu */
   onLayerRemove?: (layerId: string) => void;
   /**
-   * Callback fired whenever a paint property is changed through the per-layer
-   * style editor (a slider/color input, or the Reset button). Reports the
-   * layer the open style editor belongs to (`layerId`), the MapLibre paint
-   * property name (e.g. `"raster-brightness-max"`, `"fill-color"`), and the new
-   * value (a number for sliders, a hex string for color pickers). Lets
-   * consumers mirror the change into their own store so external style UI
-   * (e.g. a separate sidebar) stays in sync. The control still applies the
-   * change to the map itself; this callback is purely a notification.
+   * Callback fired whenever a paint property changes through the per-layer
+   * style editor (a slider/color input/pattern picker, or Reset Style).
+   * Reports the layer the open style editor belongs to (`layerId`), the
+   * MapLibre paint property name (e.g. `"raster-brightness-max"`,
+   * `"fill-color"`, or `"fill-pattern"`), and the new value. Pattern selection
+   * reports its image ID; selecting None reports `undefined`. Reset reports
+   * the restored raw value, including a string, expression, or `undefined`
+   * for `fill-pattern`. Lets consumers mirror changes into their own store so
+   * external style UI stays in sync. The control still applies changes to the
+   * map itself; this callback is purely a notification.
    */
   onLayerStyleChange?: (
     layerId: string,

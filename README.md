@@ -45,10 +45,35 @@ symbols. `map.updateImage()` changes appear on the next map `idle` event; call
 `map.triggerRepaint()` if no render is pending. Missing images retain the solid
 fill preview until the image becomes available.
 
-For expressions, the preview uses the first available literal image output;
-it does not evaluate feature-dependent image names. MapLibre GL JS 6.13 supports
-SDF fill colourization on the map as well; older renderers may show raw SDF pixels
-even when the control displays a tinted preview.
+For expressions, the preview uses the first available literal image output; it
+does not evaluate feature-dependent image names. MapLibre GL JS 6.8.0 and later
+colour SDF fill patterns on the map with `fill-color`; this package supports
+`maplibre-gl >= 3`, and older renderers may show raw SDF pixels even when the
+control displays a tinted preview.
+
+#### Fill pattern editor
+
+The fill style editor's **Fill Pattern** list shows each image from
+`map.listImages()` (style sprite and `map.addImage()`) with its ID, a preview,
+and an `SDF` badge when applicable. The current value is shown above the list.
+**None (solid fill)** clears `fill-pattern`; selecting an image applies it
+immediately and calls
+`onLayerStyleChange(layerId, 'fill-pattern', idOrUndefined)`.
+
+SDF images are recoloured through that layer's Fill Color; sprite pixels are
+never modified, so layers sharing an image can use separate colours. MapLibre
+GL JS 6.8.0 or later is required to render the tinted SDF pattern on the map.
+Non-SDF images keep their own colours. Fill Color is disabled while one is
+selected, and the existing `fill-color` value is left unchanged; it is
+available again for SDF patterns and solid fills.
+Data-driven `fill-pattern` expressions remain untouched until an option is
+selected. An unavailable current image appears as `(not loaded)` and remains
+unchanged until another option is selected.
+
+The list reflects images loaded when the editor opens. Call
+`refreshStyleEditor()` after loading images to refresh an open editor. **Reset
+Style** restores the original pattern, including removing a pattern added to a
+layer that had none.
 
 ## Installation
 
