@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import maplibregl, { Map as MapLibreMap } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import type { Map as MapLibreMap } from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LayerControlReact } from '../../src/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../../src/lib/styles/layer-control.css';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 export default function App() {
   const mapContainer = useRef<HTMLDivElement>(null);

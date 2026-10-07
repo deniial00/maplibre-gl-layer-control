@@ -32,4 +32,4 @@ export {
   createBackgroundGroupSymbolSVG,
   darkenColor,
 } from './lib/utils/symbolUtils';
-export type { SymbolOptions, LayerSymbolStyle } from './lib/utils/symbolUtils';
+export type { SymbolOptions, LayerSymbolStyle, FillPatternImage } from './lib/utils/symbolUtils';

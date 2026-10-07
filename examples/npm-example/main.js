@@ -1,9 +1,12 @@
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { LayerControl } from 'maplibre-gl-layer-control';
 
 // Import styles
 import 'maplibre-gl/dist/maplibre-gl.css';
 import 'maplibre-gl-layer-control/style.css';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 // Define the basemap style URL as a constant for reuse
 const BASEMAP_STYLE_URL = 'https://demotiles.maplibre.org/style.json';

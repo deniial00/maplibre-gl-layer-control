@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LayerSpecification, Map as MapLibreMap } from "maplibre-gl";
 import {
   createLayerSymbolSVG,
@@ -7,6 +7,7 @@ import {
   getLayerColorFromSpec,
   getLayerSymbolStyle,
   getLayerSymbolStyleFromSpec,
+  type FillPatternImage,
 } from "../src/lib/utils/symbolUtils";
 
 type ColorLayerType = "fill" | "line" | "circle";
@@ -413,5 +414,83 @@ describe("getLayerSymbolStyleFromSpec", () => {
         },
       }),
     ).toEqual({ dasharray: [3, 2] });
+  });
+});
+
+function image(alpha: number[], sdf = true): FillPatternImage {
+  const data = new Uint8Array(alpha.length * 4);
+  alpha.forEach((value, i) => data.set([10, 20, 30, value], i * 4));
+  return { data: { width: alpha.length, height: 1, data }, sdf, pixelRatio: 1, version: 0 };
+}
+
+function captureTile() {
+  let pixels = new Uint8ClampedArray();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    createImageData: (width: number, height: number) => ({ data: new Uint8ClampedArray(width * height * 4) }),
+    putImageData: (value: ImageData) => { pixels = value.data; },
+  } as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(() => `data:image/png;base64,${pixels.join(',')}`);
+  return { pixels: () => Array.from(pixels) };
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('fill pattern tiles', () => {
+  it('decodes the SDF contour rather than treating distance as opacity', () => {
+    const tile = captureTile();
+    createLayerSymbolSVG('fill', '#f08', { fillPattern: image([0, 128, 191, 255]) });
+    const pixels = tile.pixels();
+    expect(pixels.slice(0, 8)).toEqual([255, 0, 136, 0, 255, 0, 136, 0]);
+    expect(pixels[11]).toBeGreaterThan(120);
+    expect(pixels[11]).toBeLessThan(135);
+    expect(pixels.slice(12)).toEqual([255, 0, 136, 255]);
+  });
+
+  it('preserves the original colours and alpha of non-SDF patterns', () => {
+    const tile = captureTile();
+    createLayerSymbolSVG('fill', '#ff0088', { fillPattern: image([64, 255], false) });
+    expect(tile.pixels()).toEqual([10, 20, 30, 64, 10, 20, 30, 255]);
+  });
+
+  it('invalidates cached pixels after an image update and separates SDF tints', () => {
+    const tile = captureTile();
+    const pattern = image([255]);
+    createLayerSymbolSVG('fill', '#ff0000', { fillPattern: pattern });
+    createLayerSymbolSVG('fill', '#00ff00', { fillPattern: pattern });
+    expect(tile.pixels()).toEqual([0, 255, 0, 255]);
+    pattern.data.data[3] = 0;
+    pattern.version = 1;
+    createLayerSymbolSVG('fill', '#ff0000', { fillPattern: pattern });
+    expect(tile.pixels()).toEqual([255, 0, 0, 0]);
+  });
+});
+
+describe('representative pattern resolution', () => {
+  const pattern = image([255]);
+  const makeMap = (value: unknown) => ({
+    getPaintProperty: () => value,
+    getImage: (id: string) => ['stripes', 'label'].includes(id) ? pattern : undefined,
+    getStyle: () => ({ layers: [] }),
+  }) as unknown as MapLibreMap;
+
+  it('does not mistake a registered match label for an output image', () => {
+    const map = makeMap(['match', ['get', 'kind'], 'label', 'missing', 'stripes']);
+    expect(getLayerSymbolStyle(map, 'area', 'fill').fillPattern).toBe(pattern);
+    const labelsOnly = makeMap(['match', ['get', 'kind'], 'label', 'missing', 'also-missing']);
+    expect(getLayerSymbolStyle(labelsOnly, 'area', 'fill').fillPattern).toBeUndefined();
+  });
+
+  it('uses available image outputs and leaves dynamic feature lookups unresolved', () => {
+    const map = makeMap(['coalesce', ['image', 'missing'], ['image', 'stripes']]);
+    expect(getLayerSymbolStyle(map, 'area', 'fill').fillPattern).toBe(pattern);
+    expect(getLayerSymbolStyle(makeMap(['get', 'stripes']), 'area', 'fill').fillPattern).toBeUndefined();
+  });
+
+  it('uses the style definition only when runtime paint is absent', () => {
+    const map = makeMap(undefined);
+    map.getStyle = (() => ({ layers: [{ id: 'area', type: 'fill', paint: { 'fill-pattern': 'stripes' } }] })) as MapLibreMap['getStyle'];
+    expect(getLayerSymbolStyle(map, 'area', 'fill').fillPattern).toBe(pattern);
+    map.getPaintProperty = () => '';
+    expect(getLayerSymbolStyle(map, 'area', 'fill').fillPattern).toBeUndefined();
   });
 });
