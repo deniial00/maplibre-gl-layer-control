@@ -6,6 +6,8 @@
 [![Open in CodeSandbox](https://img.shields.io/badge/Open%20in-CodeSandbox-blue?logo=codesandbox)](https://codesandbox.io/p/github/opengeos/maplibre-gl-layer-control)
 [![Open in StackBlitz](https://img.shields.io/badge/Open%20in-StackBlitz-blue?logo=stackblitz)](https://stackblitz.com/github/opengeos/maplibre-gl-layer-control)
 
+**[Live demo / Showcase](https://opengeos.org/maplibre-gl-layer-control/)** — open the Full Demo for pattern fills, nested folders, and interactive layer styling.
+
 A comprehensive layer control for MapLibre GL with advanced styling capabilities. Built with TypeScript and React, providing both vanilla JavaScript and React integration options.
 
 ## Features
@@ -319,7 +321,7 @@ map.on('load', () => {
 See the [examples](./examples) folder for complete working examples:
 
 - **[basic](./examples/basic)** - Simple vanilla JavaScript example
-- **[full-demo](./examples/full-demo)** - Full demo with multiple layer types and `basemapStyleUrl` for reliable basemap detection
+- **[full-demo](./examples/full-demo)** - Full demo with fill, line, circle and raster layers, regular and SDF-tinted `fill-pattern` previews, nested layer folders through the custom-layer adapter, and `basemapStyleUrl` for reliable basemap detection
 - **[categorized-legend](./examples/categorized-legend)** - Match fill and case line legends with live category/plain-color switching and local GeoJSON
 - **[dynamic-layers](./examples/dynamic-layers)** - Auto-detect layers added before or after control
 - **[background-legend](./examples/background-legend)** - Background layer visibility control
@@ -543,6 +545,8 @@ deckAdapter.notifyLayerAdded('my-deck-layer');
 ```
 
 #### Layer Groups
+
+See the [Full Demo](https://opengeos.org/maplibre-gl-layer-control/examples/full-demo/index.html) (`examples/full-demo/main.ts`) for a working adapter with two-level folders whose visibility and opacity are combined with each layer's own and applied to the map.
 
 An adapter can organize its layers into collapsible folders by implementing the optional group methods. The panel then nests each layer under its group, nested groups included, and gives every group a collapse toggle, a visibility checkbox, and an opacity slider.
 

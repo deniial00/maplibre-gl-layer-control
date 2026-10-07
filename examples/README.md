@@ -18,7 +18,7 @@ npm install maplibre-gl-layer-control maplibre-gl
 | [npm-example](./npm-example) | Standalone npm project - copy this to start your own project |
 | [cdn](./cdn) | Browser-only example using CDN (no build step required) |
 | [basic](./basic) | Simple development example |
-| [full-demo](./full-demo) | Comprehensive demo with multiple layer types |
+| [full-demo](./full-demo) | Fill, line, circle and raster layers, regular and SDF-tinted fill patterns, and nested folders |
 | [categorized-legend](./categorized-legend) | Match fill and case line legends with live category/plain-color switches |
 | [dynamic-layers](./dynamic-layers) | Auto-detect layers added before or after control |
 | [background-legend](./background-legend) | Control individual background layer visibility |
@@ -73,7 +73,7 @@ map.on('load', () => {
 
 ### Full Demo
 
-See [full-demo/](./full-demo) for a comprehensive example with multiple layer types (fill, line, circle, raster).
+See [full-demo/](./full-demo) for a comprehensive example with fill, line, circle and raster layers, regular and SDF-tinted `fill-pattern` previews, and populated nested folders (custom-layer adapter groups) whose visibility and opacity drive the map layers.
 
 See [categorized-legend/](./categorized-legend) for a runnable match/case legend demo with live color switches.
 
