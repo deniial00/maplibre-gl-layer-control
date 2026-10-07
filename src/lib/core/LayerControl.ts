@@ -4055,7 +4055,10 @@ export class LayerControl implements IControl {
       ".style-control-slider",
     ) as NodeListOf<HTMLInputElement>;
     sliders.forEach((slider) => {
-      if (slider === active) return;
+      if (
+        slider === active ||
+        slider.parentElement?.querySelector(".style-control-number-input") === active
+      ) return;
       const property = slider.dataset.property as keyof AllPaintProperties | undefined;
       const sourceId = slider.dataset.layerId;
       if (!property || !sourceId) return;
@@ -4191,18 +4194,69 @@ export class LayerControl implements IControl {
     // is the primary group member; the rest stay in sync with it.
     slider.dataset.layerId = layerId;
 
-    const valueDisplay = document.createElement("span");
+    const valueDisplay = document.createElement("button");
+    valueDisplay.type = "button";
     valueDisplay.className = "style-control-value";
     valueDisplay.textContent = formatNumericValue(initialValue, step);
+    valueDisplay.title = `Click to enter an exact ${label.toLowerCase()}`;
+    valueDisplay.setAttribute("aria-label", `Edit ${label}`);
 
-    slider.addEventListener("input", () => {
-      const value = parseFloat(slider.value);
+    const updateValue = (value: number) => {
+      // A range input may snap its thumb to a coarse step. Keep the exact
+      // value in the display and paint rather than reading it back from the slider.
+      slider.value = String(value);
       valueDisplay.textContent = formatNumericValue(value, step);
       const targetIds = this.nativeLayerGroups.get(layerId) || [layerId];
       for (const id of targetIds) {
         this.map.setPaintProperty(id, property, value);
       }
       this.notifyLayerStyleChange(property, value);
+    };
+
+    slider.addEventListener("input", () => {
+      updateValue(parseFloat(slider.value));
+    });
+
+    valueDisplay.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const input = document.createElement("input");
+      input.type = "number";
+      input.className = "style-control-number-input";
+      input.min = String(min);
+      input.max = String(max);
+      // Exact entry uses the display precision, not the coarse slider increment.
+      const decimals = formatNumericValue(0, step).split(".")[1]?.length ?? 0;
+      input.step = String(10 ** -decimals);
+      input.value = valueDisplay.textContent ?? "";
+      input.setAttribute("aria-label", label);
+      input.addEventListener("click", (event) => event.stopPropagation());
+      input.addEventListener("pointerdown", (event) => event.stopPropagation());
+
+      // Match the opacity popup: Enter/blur apply, Escape cancels, and a
+      // key-triggered settlement must not apply again when focus moves.
+      let settled = false;
+      const settle = (apply: boolean) => {
+        if (settled) return;
+        settled = true;
+        const value = input.valueAsNumber;
+        input.replaceWith(valueDisplay);
+        if (apply && Number.isFinite(value)) {
+          updateValue(Number(formatNumericValue(clamp(value, min, max), step)));
+        }
+      };
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          settle(event.key === "Enter");
+          valueDisplay.focus();
+        }
+      });
+      input.addEventListener("blur", () => settle(true));
+
+      valueDisplay.replaceWith(input);
+      input.focus();
+      input.select();
     });
 
     inputWrapper.appendChild(slider);
