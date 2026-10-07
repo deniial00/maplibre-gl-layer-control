@@ -7,6 +7,9 @@ import {
   getLayerSymbolStyleFromSpec,
 } from "../src/lib/utils/symbolUtils";
 
+/**
+ * Builds a map stub with runtime paint values and an optional style fallback.
+ */
 function makeMap(
   layerType: string,
   runtimePaint: Record<string, unknown>,
@@ -163,7 +166,7 @@ describe("getLayerSymbolStyle", () => {
     ).toEqual({ strokeColor: "#ffffff" });
   });
 
-  it("normalizes a circle border color expression", () => {
+  it("preserves CSS color formats in circle stroke expressions", () => {
     expect(
       getLayerSymbolStyle(
         makeMap("circle", {
@@ -177,7 +180,48 @@ describe("getLayerSymbolStyle", () => {
         "preview",
         "circle",
       ),
-    ).toEqual({ strokeColor: "#ffffff" });
+    ).toEqual({ strokeColor: "rgb(255, 255, 255)" });
+  });
+
+  it("preserves HSL and alpha-bearing RGBA circle stroke colors", () => {
+    expect(
+      getLayerSymbolStyle(
+        makeMap("circle", { "circle-stroke-color": "hsl(120, 100%, 50%)" }),
+        "preview",
+        "circle",
+      ),
+    ).toEqual({ strokeColor: "hsl(120, 100%, 50%)" });
+
+    expect(
+      getLayerSymbolStyle(
+        makeMap("circle", {
+          "circle-stroke-color": "rgba(255, 0, 0, 0.5)",
+        }),
+        "preview",
+        "circle",
+      ),
+    ).toEqual({ strokeColor: "rgba(255, 0, 0, 0.5)" });
+  });
+
+  it("parses constant rgb and rgba color expressions", () => {
+    const rgbStyle = getLayerSymbolStyle(
+      makeMap("circle", { "circle-stroke-color": ["rgb", 255, 0, 0] }),
+      "preview",
+      "circle",
+    );
+    const rgbaStyle = getLayerSymbolStyle(
+      makeMap("circle", {
+        "circle-stroke-color": ["rgba", 255, 0, 0, 0.5],
+      }),
+      "preview",
+      "circle",
+    );
+
+    expect(rgbStyle).toEqual({ strokeColor: "rgb(255, 0, 0)" });
+    expect(rgbaStyle).toEqual({ strokeColor: "rgba(255, 0, 0, 0.5)" });
+    expect(createLayerSymbolSVG("circle", "#14b8a6", rgbaStyle)).toContain(
+      'stroke="rgba(255, 0, 0, 0.5)" stroke-width="1"',
+    );
   });
 });
 
