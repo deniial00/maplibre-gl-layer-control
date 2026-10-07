@@ -290,6 +290,7 @@ See the [examples](./examples) folder for complete working examples:
 
 - **[basic](./examples/basic)** - Simple vanilla JavaScript example
 - **[full-demo](./examples/full-demo)** - Full demo with multiple layer types and `basemapStyleUrl` for reliable basemap detection
+- **[categorized-legend](./examples/categorized-legend)** - Match fill and case line legends with live category/plain-color switching and local GeoJSON
 - **[dynamic-layers](./examples/dynamic-layers)** - Auto-detect layers added before or after control
 - **[background-legend](./examples/background-legend)** - Background layer visibility control
 - **[react](./examples/react)** - React integration example
@@ -315,6 +316,14 @@ The layer control displays visual symbols (colored icons) next to each layer nam
 The symbol color is automatically extracted from the layer's paint properties (e.g., `fill-color`, `line-color`, `circle-color`). Standard CSS color strings are supported, including names, hex, RGB(A), and HSL(A); previews use six-digit RGB and ignore alpha. For `case`, `match`, and `interpolate` expressions, only result/output literals are inspected. The public `normalizeColor()` utility returns `null` for invalid values; invalid candidates are skipped, and a neutral gray is used when no color can be determined.
 
 Line previews reflect `line-dasharray`, scaled to fit the swatch. Circle previews use `circle-stroke-color` for the border; setting `circle-stroke-width` to `0` removes the border.
+
+Top-level `match` and `case` color expressions on fill, line, circle, symbol, and fill-extrusion layers show a fixed four-color categorized icon instead of a single-color preview. The icon identifies the renderer, not the actual layer colors. Use the chevron beside the layer name to expand its initially collapsed category legend; each entry uses the layer's geometry swatch, and the fallback appears last as **Other**. Expansion is retained when layer rows are rebuilt.
+
+Match labels list their values (grouped values are comma-separated). Case labels summarize simple comparisons and property-presence checks; complex conditions use JSON. Labels are limited to 40 characters, with full text in tooltips. Category colors accept hex and RGB(A) string literals; named colors, HSL(A), and nested output expressions use neutral gray. Only top-level `match`/`case` is categorized: `interpolate` and `step` retain their existing first-color behavior. Patterned fills, custom layers, and Background legends are unchanged. Setting `showLayerSymbol: false` also hides category toggles and legends.
+
+Paint changes refresh category legends in place without closing an open style editor. Switching a categorized expression to a plain color removes its chevron and restores the normal geometry symbol.
+
+For custom integrations, `getLayerColorCategories(map, layerId, layerType)` returns `{ property, categories }` or `null`, where each `ColorCategory` has `label`, normalized hex `color` (or `null`), and full `title`. `createCategorizedSymbolSVG(size = 16)` returns the fixed indicator SVG. Both helpers and the `ColorCategory` / `ColorCategories` types are exported from the package.
 
 To disable layer symbols:
 

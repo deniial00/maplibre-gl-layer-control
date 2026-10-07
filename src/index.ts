@@ -25,11 +25,19 @@ export { getLayerType, getLayerOpacity, setLayerOpacity, isStyleableLayerType } 
 export { formatNumericValue, clamp } from './lib/utils/formatters';
 export {
   getLayerColor,
+  getLayerColorCategories,
   getLayerColorFromSpec,
   getLayerSymbolStyle,
   getLayerSymbolStyleFromSpec,
   createLayerSymbolSVG,
   createBackgroundGroupSymbolSVG,
+  createCategorizedSymbolSVG,
   darkenColor,
 } from './lib/utils/symbolUtils';
-export type { SymbolOptions, LayerSymbolStyle, FillPatternImage } from './lib/utils/symbolUtils';
+export type {
+  SymbolOptions,
+  LayerSymbolStyle,
+  FillPatternImage,
+  ColorCategory,
+  ColorCategories,
+} from './lib/utils/symbolUtils';

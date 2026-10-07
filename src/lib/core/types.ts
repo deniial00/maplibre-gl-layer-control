@@ -350,6 +350,8 @@ export interface InternalControlState {
   userInteractingWithSlider: boolean;
   /** Whether the background legend panel is open */
   backgroundLegendOpen: boolean;
+  /** Layer IDs whose category sub-legend is expanded */
+  expandedCategoryLayers: Set<string>;
   /** Individual background layer visibility states */
   backgroundLayerVisibility: Map<string, boolean>;
   /** Whether to show only rendered layers in background legend */
