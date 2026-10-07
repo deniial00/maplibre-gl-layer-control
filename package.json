@@ -89,5 +89,8 @@
     "vite": "^6.0.0",
     "vite-plugin-dts": "^4.3.0",
     "vitest": "^4.0.17"
+  },
+  "dependencies": {
+    "colord": "2.10.0"
   }
 }

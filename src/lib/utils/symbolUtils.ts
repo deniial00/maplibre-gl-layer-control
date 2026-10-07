@@ -20,25 +20,49 @@ const COLOR_PROPERTY_MAP: Record<string, string[]> = {
  * @param expression The MapLibre expression to extract color from
  * @returns The first color found, or null
  */
-function extractColorFromExpression(expression: any[]): string | null {
-  if (!Array.isArray(expression) || expression.length === 0) return null;
+function extractColorFromExpression(expression: unknown[]): string | null {
+  if (expression.length === 0) return null;
 
-  // Recursively search for color values
-  for (const item of expression) {
+  const operator = expression[0];
+  let index = 0;
+  let stride = 1;
+  let end = expression.length;
+  let fallbackIndex = -1;
+  let firstResultIndex = 0;
+
+  if (operator === 'case' || operator === 'match') {
+    firstResultIndex = operator === 'case' ? 2 : 3;
+    index = firstResultIndex;
+    stride = 2;
+    end = expression.length - 1;
+    fallbackIndex = expression.length - 1;
+  } else if (operator === 'interpolate') {
+    index = 4;
+    stride = 2;
+  }
+
+  for (; index < end; index += stride) {
+    const item = expression[index];
     if (typeof item === 'string') {
-      // Check if it's a color string
-      if (
-        item.startsWith('#') ||
-        item.startsWith('rgb') ||
-        item.startsWith('hsl')
-      ) {
-        return normalizeColor(item);
-      }
+      const color = normalizeColor(item);
+      if (color !== null) return color;
     } else if (Array.isArray(item)) {
-      const result = extractColorFromExpression(item);
-      if (result) return result;
+      const color = extractColorFromExpression(item);
+      if (color !== null) return color;
     }
   }
+
+  if (fallbackIndex >= firstResultIndex) {
+    const fallback = expression[fallbackIndex];
+    if (typeof fallback === 'string') {
+      const color = normalizeColor(fallback);
+      if (color !== null) return color;
+    } else if (Array.isArray(fallback)) {
+      const color = extractColorFromExpression(fallback);
+      if (color !== null) return color;
+    }
+  }
+
   return null;
 }
 
@@ -57,39 +81,37 @@ export function getLayerColor(
   const propertyNames = COLOR_PROPERTY_MAP[layerType];
   if (!propertyNames) return null;
 
-  // Try each property in order
   for (const propertyName of propertyNames) {
-    // First try runtime property (may have been changed)
     try {
       const runtimeColor = map.getPaintProperty(layerId, propertyName);
       if (runtimeColor) {
         if (typeof runtimeColor === 'string') {
-          return normalizeColor(runtimeColor);
+          const color = normalizeColor(runtimeColor);
+          if (color !== null) return color;
         }
         if (Array.isArray(runtimeColor)) {
-          // Handle expressions
           const extracted = extractColorFromExpression(runtimeColor);
-          if (extracted) return extracted;
+          if (extracted !== null) return extracted;
         }
       }
     } catch {
       // Property doesn't exist, continue
     }
 
-    // Try from layer definition
     const style = map.getStyle();
     const layer = style?.layers?.find(
-      (l: LayerSpecification) => l.id === layerId
+      (styleLayer: LayerSpecification) => styleLayer.id === layerId
     );
     if (layer && 'paint' in layer && layer.paint) {
-      const paintColor = (layer.paint as Record<string, any>)[propertyName];
+      const paintColor = (layer.paint as Record<string, unknown>)[propertyName];
       if (paintColor) {
         if (typeof paintColor === 'string') {
-          return normalizeColor(paintColor);
+          const color = normalizeColor(paintColor);
+          if (color !== null) return color;
         }
         if (Array.isArray(paintColor)) {
           const extracted = extractColorFromExpression(paintColor);
-          if (extracted) return extracted;
+          if (extracted !== null) return extracted;
         }
       }
     }
@@ -109,14 +131,15 @@ export function getLayerColorFromSpec(layer: LayerSpecification): string | null 
 
   for (const propertyName of propertyNames) {
     if ('paint' in layer && layer.paint) {
-      const paintColor = (layer.paint as Record<string, any>)[propertyName];
+      const paintColor = (layer.paint as Record<string, unknown>)[propertyName];
       if (paintColor) {
         if (typeof paintColor === 'string') {
-          return normalizeColor(paintColor);
+          const color = normalizeColor(paintColor);
+          if (color !== null) return color;
         }
         if (Array.isArray(paintColor)) {
           const extracted = extractColorFromExpression(paintColor);
-          if (extracted) return extracted;
+          if (extracted !== null) return extracted;
         }
       }
     }
