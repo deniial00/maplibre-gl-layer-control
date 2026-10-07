@@ -1078,7 +1078,8 @@
   font-weight: 600;
 }
 
-.layer-control-group-toggle {
+.layer-control-group-toggle,
+.layer-control-categories-toggle {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
@@ -1090,6 +1091,59 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.layer-control-categories-toggle svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s ease;
+}
+
+.layer-control-item.categories-expanded .layer-control-categories-toggle svg {
+  transform: rotate(90deg);
+}
+
+.layer-control-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 24px;
+  max-height: 160px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.layer-control-categories[hidden] {
+  display: none;
+}
+
+.layer-control-category {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #444;
+  min-height: 16px;
+}
+
+.layer-control-category-symbol {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.layer-control-category-symbol svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.layer-control-category-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .layer-control-group-toggle svg {

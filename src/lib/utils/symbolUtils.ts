@@ -249,6 +249,95 @@ function resolveSymbolStyle(
   return {};
 }
 
+/** Read runtime paint values, falling back to the layer specification. */
+function readPaintValue(map: MapLibreMap, layerId: string, property: keyof AllPaintProperties): unknown {
+  let value: unknown;
+  try {
+    value = map.getPaintProperty(layerId, property);
+  } catch {
+    // The runtime property may not be available yet.
+  }
+  if (value !== undefined) return value;
+  const layer = map.getStyle()?.layers?.find((item) => item.id === layerId);
+  return layer && 'paint' in layer && layer.paint
+    ? (layer.paint as Record<string, unknown>)[property]
+    : undefined;
+}
+
+export interface ColorCategory {
+  /** Text shown next to the swatch. */
+  label: string;
+  /** Normalized hex, or null for an unsupported output (gray swatch). */
+  color: string | null;
+  /** Full label or JSON condition for the tooltip. */
+  title: string;
+}
+
+export interface ColorCategories {
+  /** Paint property that supplies the categories. */
+  property: string;
+  categories: ColorCategory[];
+}
+
+function formatCaseCondition(condition: unknown): string {
+  if (Array.isArray(condition)) {
+    const [operator, input, literal] = condition;
+    if (
+      ['==', '!=', '<', '<=', '>', '>='].includes(operator) &&
+      Array.isArray(input) && input[0] === 'get' && typeof input[1] === 'string' &&
+      ['string', 'number', 'boolean'].includes(typeof literal)
+    ) {
+      return `${input[1]} ${operator === '==' ? '=' : operator} ${literal}`;
+    }
+    if (operator === 'has' && typeof input === 'string') return `has ${input}`;
+    if (
+      operator === '!' && Array.isArray(input) &&
+      input[0] === 'has' && typeof input[1] === 'string'
+    ) return `no ${input[1]}`;
+  }
+  return JSON.stringify(condition) ?? String(condition);
+}
+
+function parseColorCategories(value: unknown): ColorCategory[] | null {
+  if (!Array.isArray(value) || !['match', 'case'].includes(value[0])) return null;
+  const categories: ColorCategory[] = [];
+  const addCategory = (label: string, title: string, output: unknown): void => {
+    categories.push({
+      label: label.length > 40 ? `${label.slice(0, 39)}…` : label,
+      title,
+      color: typeof output === 'string' &&
+        (output.startsWith('#') || output.startsWith('rgb'))
+        ? normalizeColor(output)
+        : null,
+    });
+  };
+  const isMatch = value[0] === 'match';
+  for (let i = isMatch ? 2 : 1; i < value.length - 1; i += 2) {
+    const condition = value[i];
+    const label = isMatch
+      ? Array.isArray(condition) ? condition.map(String).join(', ') : String(condition)
+      : formatCaseCondition(condition);
+    addCategory(label, isMatch ? label : JSON.stringify(condition) ?? String(condition), value[i + 1]);
+  }
+  addCategory('Other', 'Other', value[value.length - 1]);
+  return categories.length >= 2 ? categories : null;
+}
+
+/** Get ordered categories from a top-level match/case color expression. */
+export function getLayerColorCategories(
+  map: MapLibreMap,
+  layerId: string,
+  layerType: string
+): ColorCategories | null {
+  if (!['fill', 'line', 'symbol', 'circle', 'fill-extrusion'].includes(layerType)) return null;
+  if (layerType === 'fill' && readPaintValue(map, layerId, 'fill-pattern') !== undefined) return null;
+  for (const property of COLOR_PROPERTY_MAP[layerType]) {
+    const categories = parseColorCategories(readPaintValue(map, layerId, property));
+    if (categories) return { property, categories };
+  }
+  return null;
+}
+
 /**
  * Get additional symbol styles from runtime paint properties, falling back to
  * the layer definition when a runtime property is unavailable
@@ -263,36 +352,17 @@ export function getLayerSymbolStyle(
   layerType: string
 ): LayerSymbolStyle {
   if (layerType === 'fill') {
-    let pattern: unknown;
-    try {
-      pattern = map.getPaintProperty(layerId, 'fill-pattern');
-    } catch {
-      // Fall back to the style definition when runtime paint is unavailable.
-    }
-    if (pattern === undefined) {
-      const layer = map.getStyle()?.layers?.find((item) => item.id === layerId);
-      if (layer && 'paint' in layer && layer.paint) {
-        pattern = (layer.paint as Record<string, unknown>)['fill-pattern'];
-      }
-    }
-    const fillPattern = resolvePatternImage(map, pattern);
+    const fillPattern = resolvePatternImage(map, readPaintValue(map, layerId, 'fill-pattern'));
     return fillPattern ? { fillPattern } : {};
   }
 
   const getPaint = (property: keyof AllPaintProperties): unknown => {
-    let value: unknown;
-    try {
-      value = map.getPaintProperty(layerId, property);
-    } catch {
-      // Fall back to the style definition when the runtime property is absent.
-    }
-    if (value !== undefined && value !== null) return value;
-
+    const value = readPaintValue(map, layerId, property);
+    if (value !== null) return value;
     const layer = map.getStyle()?.layers?.find((item) => item.id === layerId);
-    if (layer && 'paint' in layer && layer.paint) {
-      return (layer.paint as Record<string, unknown>)[property];
-    }
-    return undefined;
+    return layer && 'paint' in layer && layer.paint
+      ? (layer.paint as Record<string, unknown>)[property]
+      : undefined;
   };
 
   return resolveSymbolStyle(layerType, getPaint);
@@ -818,4 +888,14 @@ export function createLayerSymbolSVG(
  */
 export function createBackgroundGroupSymbolSVG(size: number = 16): string {
   return createStackedLayersSymbol(size);
+}
+
+/** Fixed categorized-renderer indicator, independent of layer colors. */
+export function createCategorizedSymbolSVG(size: number = 16): string {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1.5" y="1.5" width="6" height="6" rx="1" fill="#e15759" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>
+  <rect x="8.5" y="1.5" width="6" height="6" rx="1" fill="#4e79a7" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>
+  <rect x="1.5" y="8.5" width="6" height="6" rx="1" fill="#59a14f" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>
+  <rect x="8.5" y="8.5" width="6" height="6" rx="1" fill="#f2c94c" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>
+</svg>`;
 }

@@ -19,6 +19,7 @@ npm install maplibre-gl-layer-control maplibre-gl
 | [cdn](./cdn) | Browser-only example using CDN (no build step required) |
 | [basic](./basic) | Simple development example |
 | [full-demo](./full-demo) | Comprehensive demo with multiple layer types |
+| [categorized-legend](./categorized-legend) | Match fill and case line legends with live category/plain-color switches |
 | [dynamic-layers](./dynamic-layers) | Auto-detect layers added before or after control |
 | [background-legend](./background-legend) | Control individual background layer visibility |
 | [pattern-fill](./pattern-fill) | Single-file raster and SDF pattern-preview demo with a tint button |
@@ -73,6 +74,14 @@ map.on('load', () => {
 ### Full Demo
 
 See [full-demo/](./full-demo) for a comprehensive example with multiple layer types (fill, line, circle, raster).
+
+See [categorized-legend/](./categorized-legend) for a runnable match/case legend demo with live color switches.
+
+### Categorized Legend
+
+Open [categorized-legend/](./categorized-legend) for a runnable example with local GeoJSON and no external basemap or tile service. Expand **Land Use** for match categories (`park`, grouped `residential, commercial`, and `Other`), or **Roads** for case conditions (`kind = highway`, `lanes > 2`, and `Other`).
+
+Use the selectors to change category colors or switch to plain colors. Open the **Landmarks** style editor first to see that it stays open during legend updates. Expanded legends stay expanded when their category colors change. Switching to a plain color removes the categorized icon and chevron; switching back restores the legend and its saved expansion state.
 
 ### React Integration
 
@@ -139,5 +148,6 @@ npm run dev
 # Then open http://localhost:5173/examples/basic/
 # or http://localhost:5173/examples/full-demo/
 # or http://localhost:5173/examples/pattern-fill/
+# or http://localhost:5173/examples/categorized-legend/
 # or http://localhost:5173/examples/react/
 ```

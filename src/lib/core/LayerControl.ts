@@ -29,10 +29,12 @@ import { normalizeColor } from "../utils/colorUtils";
 import { formatNumericValue, clamp } from "../utils/formatters";
 import {
   getLayerColor,
+  getLayerColorCategories,
   getLayerColorFromSpec,
   getLayerSymbolStyle,
   createLayerSymbolSVG,
   createBackgroundGroupSymbolSVG,
+  createCategorizedSymbolSVG,
 } from "../utils/symbolUtils";
 
 /**
@@ -162,6 +164,7 @@ export class LayerControl implements IControl {
       originalStyles: new Map<string, OriginalStyle>(),
       userInteractingWithSlider: false,
       backgroundLegendOpen: false,
+      expandedCategoryLayers: new Set<string>(),
       backgroundLayerVisibility: new Map<string, boolean>(),
       onlyRenderedFilter: false,
       contextMenu: {
@@ -1190,6 +1193,7 @@ export class LayerControl implements IControl {
         this.updateLayerStatesFromMap();
         this.checkForNewLayers();
         this.updateFillSymbols();
+        this.refreshLayerCategories();
       }, 100);
     });
 
@@ -1745,6 +1749,7 @@ export class LayerControl implements IControl {
     }
 
     item.appendChild(row);
+    if (this.showLayerSymbol) this.applyLayerCategories(item, layerId, displayName);
 
     // Add context menu event listener (skip for Background layer)
     if (this.enableContextMenu && layerId !== "Background") {
@@ -1756,6 +1761,101 @@ export class LayerControl implements IControl {
     }
 
     container.appendChild(item);
+  }
+
+  /** Refresh changed category legends without rebuilding rows or style editors. */
+  private refreshLayerCategories(): void {
+    if (!this.showLayerSymbol) return;
+    this.panel
+      .querySelectorAll<HTMLElement>(".layer-control-item[data-layer-id]")
+      .forEach((item) => {
+        const layerId = item.dataset.layerId!;
+        const layer = this.map.getLayer(layerId);
+        if (!layer || layerId === "Background" || this.state.layerStates[layerId]?.isCustomLayer) return;
+        const result = getLayerColorCategories(this.map, layerId, layer.type);
+        const signature = result ? JSON.stringify(result) : "";
+        if (signature === (item.dataset.categorySignature ?? "")) return;
+        const name = item.querySelector<HTMLElement>(":scope > .layer-control-row > .layer-control-name");
+        this.applyLayerCategories(item, layerId, name?.textContent ?? layerId);
+      });
+  }
+
+  /** Apply categories in place without disturbing the row or its style editor. */
+  private applyLayerCategories(
+    item: HTMLElement,
+    layerId: string,
+    displayName: string,
+  ): void {
+    item.querySelector(":scope > .layer-control-categories")?.remove();
+    item.classList.remove("categories-expanded");
+    const row = item.querySelector<HTMLElement>(":scope > .layer-control-row");
+    row?.querySelector(".layer-control-categories-toggle")?.remove();
+    const symbol = row?.querySelector<HTMLElement>(":scope > .layer-control-symbol");
+    if (!row || !symbol || layerId === "Background" || this.state.layerStates[layerId]?.isCustomLayer) return;
+    const layer = this.map.getLayer(layerId);
+    if (!layer) return;
+    const layerType = layer.type;
+    const result = getLayerColorCategories(this.map, layerId, layerType);
+    item.dataset.categorySignature = result ? JSON.stringify(result) : "";
+    if (!result) {
+      if (symbol.dataset.categorized === "true") {
+        symbol.innerHTML = createLayerSymbolSVG(
+          layerType,
+          getLayerColor(this.map, layerId, layerType),
+          getLayerSymbolStyle(this.map, layerId, layerType),
+        );
+        symbol.title = `Layer type: ${layerType}`;
+        delete symbol.dataset.categorized;
+        if (layerType === "fill") symbol.dataset.previewLayerId = layerId;
+      }
+      return;
+    }
+
+    symbol.innerHTML = createCategorizedSymbolSVG(16);
+    symbol.dataset.categorized = "true";
+    delete symbol.dataset.previewLayerId;
+    symbol.title = `Categorized by ${result.property} (${result.categories.length} classes)`;
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "layer-control-categories-toggle";
+    toggle.innerHTML = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M6 4l4 4-4 4z"/>
+    </svg>`;
+    row.querySelector(":scope > .layer-control-name")?.after(toggle);
+
+    const container = document.createElement("div");
+    container.className = "layer-control-categories";
+    for (const category of result.categories) {
+      const entry = document.createElement("div");
+      entry.className = "layer-control-category";
+      const swatch = document.createElement("span");
+      swatch.className = "layer-control-category-symbol";
+      swatch.innerHTML = createLayerSymbolSVG(layerType, category.color, { size: 14 });
+      const label = document.createElement("span");
+      label.className = "layer-control-category-label";
+      label.textContent = category.label;
+      label.title = category.title;
+      entry.append(swatch, label);
+      container.appendChild(entry);
+    }
+    row.after(container);
+
+    const setExpanded = (expanded: boolean): void => {
+      item.classList.toggle("categories-expanded", expanded);
+      container.hidden = !expanded;
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.title = expanded ? "Hide categories" : "Show categories";
+      toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} categories for ${displayName}`);
+    };
+    setExpanded(this.state.expandedCategoryLayers.has(layerId));
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const expanded = !this.state.expandedCategoryLayers.has(layerId);
+      if (expanded) this.state.expandedCategoryLayers.add(layerId);
+      else this.state.expandedCategoryLayers.delete(layerId);
+      setExpanded(expanded);
+    });
   }
 
   /**
